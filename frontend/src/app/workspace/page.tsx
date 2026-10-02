@@ -13,7 +13,9 @@ import { Container } from "@/components/layout/AppShell";
 import { api, ApiError, post } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
-import type { ContentItem, MediaItem } from "@/lib/types";
+import type { ContentItem, DuplicateCandidate, MediaItem } from "@/lib/types";
+import { DuplicateNotice } from "@/components/datasets/DuplicateNotice";
+import { DatasetUploader } from "@/components/datasets/DatasetUploader";
 
 interface Step { key: string; label: string; status: "pending" | "running" | "done" | "failed" | "skipped"; detail: string }
 interface Job { id: number; file_name: string; status: string; steps: Step[]; error: string; document?: { slug: string; title: string; status: string } | null; created_at: string }
@@ -49,15 +51,41 @@ function Uploader({ onDone }: { onDone: () => void }) {
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
-  const start = async () => {
+  const [dups, setDups] = useState<DuplicateCandidate[] | null>(null);
+
+  const check = async () => {
     if (!file) return;
     setErr("");
     if (file.size > 25 * 1024 * 1024) return setErr("The file exceeds the 25 MB limit.");
     if (!/\.(pdf|txt|md)$/i.test(file.name)) return setErr("Only PDF, TXT or MD documents can be ingested here.");
     setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("title", meta.title);
+      const r = await post<{ duplicates: DuplicateCandidate[] }>("/api/ingestion/check-duplicates", fd, {});
+      if (r.duplicates.length) {
+        setDups(r.duplicates);
+        setBusy(false);
+        return;
+      }
+    } catch (e) {
+      setErr((e as ApiError).message);
+      setBusy(false);
+      return;
+    }
+    await start();
+  };
+
+  const start = async (updateSlug?: string) => {
+    if (!file) return;
+    setErr("");
+    setDups(null);
+    setBusy(true);
     const fd = new FormData();
     fd.append("file", file);
     Object.entries(meta).forEach(([k, v]) => fd.append(k, v));
+    if (updateSlug) fd.append("update_existing", updateSlug);
     try {
       const j = await post<Job>("/api/ingestion/upload", fd, {});
       setJob(j);
@@ -120,7 +148,14 @@ function Uploader({ onDone }: { onDone: () => void }) {
             </Field>
           </div>
           {err && <p role="alert" className="mt-3 rounded-lg bg-[#fbe9e5] px-3 py-2 text-[13px] text-coral">{err}</p>}
-          <Button className="mt-4 w-full" size="lg" disabled={!file} loading={busy} onClick={start} icon={<Upload className="h-4 w-4" />}>Upload & index</Button>
+          {dups && file ? (
+            <div className="mt-4">
+              <DuplicateNotice uploaded={file.name} candidates={dups} busy={busy} onKeepBoth={() => start()} onUpdate={(slug) => start(slug)} onCancel={() => setDups(null)} />
+            </div>
+          ) : (
+            <Button className="mt-4 w-full" size="lg" disabled={!file} loading={busy} onClick={check} icon={<Upload className="h-4 w-4" />}>Upload & index</Button>
+          )}
+          <p className="mt-2 text-[11.5px] text-steel">Scanned PDFs are read with OCR when it is available on the server; page numbers are kept for citations.</p>
         </div>
         <div className="rounded-2xl bg-snow p-5">
           <p className="mb-3 font-mono text-[11px] uppercase tracking-wider text-steel">Ingestion pipeline</p>
@@ -137,7 +172,7 @@ function Uploader({ onDone }: { onDone: () => void }) {
             </>
           ) : (
             <ol className="space-y-2 text-[13px] text-steel">
-              {["Upload document", "Validate file (type, signature, size, name)", "Extract text (PyMuPDF)", "Extract metadata", "Create document chunks", "Generate embeddings", "Store vectors", "Index document", "Mark repository status"].map((s, i) => (
+              {["Upload document", "Validate file (type, signature, size, name)", "Extract text (PyMuPDF)", "OCR scanned pages (tesseract)", "Extract metadata", "Create document chunks", "Generate embeddings", "Store vectors", "Index document", "Mark repository status"].map((s, i) => (
                 <li key={s} className="flex gap-3"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-ice text-[11px]">{i + 1}</span>{s}</li>
               ))}
             </ol>
@@ -150,7 +185,7 @@ function Uploader({ onDone }: { onDone: () => void }) {
 
 function Workspace() {
   const [tick, setTick] = useState(0);
-  const [mode, setMode] = useState<"document" | "media">("document");
+  const [mode, setMode] = useState<"document" | "media" | "dataset">("document");
   const jobs = useApi<{ results: Job[] }>("/api/ingestion/jobs", undefined, [tick]);
   const media = useApi<{ results: MediaItem[] }>("/api/my/media-uploads", undefined, [tick]);
   const content = useApi<{ results: ContentItem[] }>("/api/content", { mine: true });
@@ -161,8 +196,8 @@ function Workspace() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <Tabs className="mb-4 w-fit" value={mode} onChange={setMode}
-            tabs={[{ key: "document", label: "Document (PDF · TXT · MD)" }, { key: "media", label: "Image / Video" }]} />
-          {mode === "document" ? <Uploader onDone={() => setTick((t) => t + 1)} /> : <MediaUploader onDone={() => setTick((t) => t + 1)} />}
+            tabs={[{ key: "document", label: "Document" }, { key: "dataset", label: "Dataset (CSV · JSON)" }, { key: "media", label: "Image / Video" }]} />
+          {mode === "document" ? <Uploader onDone={() => setTick((t) => t + 1)} /> : mode === "dataset" ? <DatasetUploader /> : <MediaUploader onDone={() => setTick((t) => t + 1)} />}
         </div>
         <div className="space-y-4">
           <Card className="p-5">

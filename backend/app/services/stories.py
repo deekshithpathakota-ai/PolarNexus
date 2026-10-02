@@ -178,14 +178,15 @@ def story_out(db: Session, cat: Catalog, s: ResearchStory, full: bool = True) ->
                                             "is_demo", "verification", "verification_label", "topics")},
                       "role": it.get("role") or ROLE.get(_role_key(c), ("Related",))[0], "note": it.get("note", ""),
                       "extra": {k: c["extra"].get(k) for k in ("media_type", "scene", "thumbnail", "duration")} if c["type"] == "media" else {}})
-    demo_items = sum(1 for i in items if i["verification"] in prov.DEMO_STATUSES)
+    records = [i for i in items if i["type"] != "topic"]  # taxonomy entries are not evidence
+    demo_items = sum(1 for i in records if i["verification"] in prov.DEMO_STATUSES)
     out = {"id": s.id, "slug": s.slug, "title": s.title, "status": s.status, "is_demo": s.is_demo,
            "created_at": s.created_at.isoformat() if s.created_at else None,
            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
            "item_count": len(items), "cover": next((i for i in items if i["type"] == "media"), None),
            "roles": list(OrderedDict.fromkeys(i["role"] for i in items)),
-           "basis": {"items": len(items), "demonstration": demo_items,
-                     "authoritative": sum(1 for i in items if i["verification"] in prov.AUTHORITATIVE_STATUSES)}}
+           "basis": {"items": len(records), "demonstration": demo_items,
+                     "authoritative": sum(1 for i in records if i["verification"] in prov.AUTHORITATIVE_STATUSES)}}
     if not full:
         return out
     timeline, points = [], []
@@ -208,8 +209,8 @@ def story_out(db: Session, cat: Catalog, s: ResearchStory, full: bool = True) ->
                evidence=list(evidence.values()),
                chain=[{"role": r, "items": [x for x in items if x["role"] == r]} for r in out["roles"]],
                notice=("This story is assembled from prototype demonstration records — it shows how the system connects "
-                       "knowledge, not verified science.") if items and demo_items == len(items) else
-                      (f"{demo_items} of {len(items)} connected records are demonstration data." if demo_items else ""))
+                       "knowledge, not verified science.") if records and demo_items == len(records) else
+                      (f"{demo_items} of {len(records)} connected records are demonstration data." if demo_items else ""))
     return out
 
 

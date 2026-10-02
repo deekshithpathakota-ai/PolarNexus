@@ -51,6 +51,9 @@ export async function api<T>(path: string, init: RequestInit & { query?: Query; 
   const headers = new Headers(rest.headers);
   const token = getToken() || memoryToken;
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  // Marks requests from this app. The API requires it for state-changing calls authenticated only by the HttpOnly
+  // session cookie (a cross-site form cannot set custom headers — CSRF protection).
+  headers.set("X-PolarNexus-Client", "web");
   if (rest.body && !(rest.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
@@ -58,7 +61,12 @@ export async function api<T>(path: string, init: RequestInit & { query?: Query; 
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}${query ? qs(query) : ""}`, { ...rest, headers, signal: rest.signal ?? ctrl.signal });
+    res = await fetch(`${API_BASE}${path}${query ? qs(query) : ""}`, {
+      ...rest,
+      headers,
+      credentials: API_BASE ? "include" : "same-origin",
+      signal: rest.signal ?? ctrl.signal,
+    });
   } catch (e) {
     clearTimeout(timer);
     if ((e as Error).name === "AbortError") throw new ApiError("The request took too long. Please try again.", 408);

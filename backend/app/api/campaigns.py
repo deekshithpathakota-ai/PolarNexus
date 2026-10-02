@@ -377,7 +377,7 @@ def outreach_analytics(include_demo: bool = True, days: int = Query(120, ge=7, l
         return {"view": 0, "click": 0, "share": 0, "complete": 0}
 
     totals = blank()
-    by_content, by_campaign, by_audience, by_channel, by_format, by_month = (defaultdict(blank) for _ in range(6))
+    by_content, by_campaign, by_audience, by_channel, by_format, by_month, by_week = (defaultdict(blank) for _ in range(7))
     topic_views: Counter = Counter()
     for r in rows:
         totals[r.event] += r.count
@@ -388,6 +388,8 @@ def outreach_analytics(include_demo: bool = True, days: int = Query(120, ge=7, l
         by_channel[r.channel][r.event] += r.count
         by_format[c.format if c else "unknown"][r.event] += r.count
         by_month[r.created_at.strftime("%Y-%m")][r.event] += r.count
+        wk = (r.created_at.date() - timedelta(days=r.created_at.weekday())).isoformat()
+        by_week[wk][r.event] += r.count
         if r.event == "view" and c and c.resource_id:
             card = cat.card(c.resource_type, c.resource_id)
             for t in (card or {}).get("topics", []):
@@ -418,11 +420,12 @@ def outreach_analytics(include_demo: bool = True, days: int = Query(120, ge=7, l
                   if include_demo and demo_n else "Only engagement recorded by this deployment's public pages."},
         "window_days": days, "totals": summarise(totals),
         "campaigns": campaign_rows, "content": content_rows[:15],
-        "audiences": [{"key": k, "label": AUDIENCES.get(k, k.title()), **summarise(d)} for k, d in sorted(by_audience.items(), key=lambda x: -x[1]["view"])],
+        "audiences": [{"key": k, "label": AUDIENCES.get(k, k.replace("_", " ").capitalize()), **summarise(d)} for k, d in sorted(by_audience.items(), key=lambda x: -x[1]["view"])],
         "channels": [{"key": k, "label": CHANNELS.get(k, {}).get("label", k), "live": CHANNELS.get(k, {}).get("status") == "live", **summarise(d)}
                      for k, d in sorted(by_channel.items(), key=lambda x: -x[1]["view"])],
         "formats": [{"key": k, **summarise(d)} for k, d in sorted(by_format.items(), key=lambda x: -x[1]["view"])],
         "months": [{"month": k, **d} for k, d in sorted(by_month.items())],
+        "weeks": [{"week": k, **d} for k, d in sorted(by_week.items())],
         "popular_topics": [{"topic": t, "views": v} for t, v in topic_views.most_common(8)],
         "conversion": {
             "research_records": len(public_research),

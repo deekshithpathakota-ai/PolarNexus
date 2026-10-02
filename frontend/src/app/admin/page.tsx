@@ -10,6 +10,7 @@ import { Container } from "@/components/layout/AppShell";
 import { fmtNum } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import type { Health } from "@/lib/types";
+import { PlatformHealth } from "@/components/admin/PlatformHealth";
 
 function Kpi({ icon: I, label, value, href }: { icon: typeof Eye; label: string; value: string | number; href?: string }) {
   const inner = (
@@ -44,6 +45,7 @@ function Dashboard() {
             <Kpi icon={Bot} label="AI questions (60 d)" value={a.totals.ai_questions} href="/admin/analytics" />
             <Kpi icon={Activity} label="System" value={health.data ? (health.data.status === "ok" ? "Healthy" : "Degraded") : "…"} href="/admin/health" />
           </div>
+          <div className="mt-5"><PlatformHealth /></div>
           <div className="mt-5 grid gap-5 xl:grid-cols-3">
             <Card className="p-5 xl:col-span-2"><h2 className="mb-2 text-lg text-night">Usage trends</h2><UsageChart data={a.timeline} /></Card>
             <Card className="p-5"><h2 className="mb-2 text-lg text-night">Resource types</h2><Donut data={a.resource_types} height={280} /></Card>

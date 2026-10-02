@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, FileText, Lock, MapPin, Sparkles, SquarePen } from "lucide-react";
+import { Bot, ExternalLink, FileText, Lock, MapPin, ScanText, Sparkles, SquarePen } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -12,6 +12,8 @@ import { BackLink, DetailError, DetailSkeleton, SideCard } from "@/components/co
 import { ResourceActions } from "@/components/common/ResourceActions";
 import { Badge, Button, Card, DemoBadge, MetaRow, Tabs } from "@/components/common/ui";
 import { ProvenancePanel } from "@/components/provenance/Provenance";
+import { ScientificTrust } from "@/components/provenance/Trust";
+import { StoryButton } from "@/components/stories/StoryButton";
 import { Container } from "@/components/layout/AppShell";
 import { useAuth } from "@/lib/auth";
 import { BRAND, fmtDate, fmtNum } from "@/lib/format";
@@ -73,10 +75,29 @@ function ResourceDetail() {
           >
             Turn Research Into Outreach
           </Button>
+          <StoryButton type="document" slug={doc.slug} />
           <div className="flex flex-wrap gap-2 sm:ml-auto">
             <ResourceActions itemType="document" slug={doc.slug} label={doc.title} citation={doc.citation} download={`/api/resources/${doc.slug}/download`} />
           </div>
         </div>
+        {doc.metadata_only && (
+          <p role="note" className="mt-4 flex max-w-3xl flex-wrap items-center gap-2 rounded-xl border border-[#b9d9ea] bg-[#eaf5fb] px-4 py-2.5 text-[13.5px] text-[#0d5a75]">
+            <span><strong>Metadata record.</strong> This is a real public resource catalogued with its publisher and link. The full text is not stored in {BRAND}.</span>
+            {doc.source_url && (
+              <a href={doc.source_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium underline">
+                Open the original <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+              </a>
+            )}
+          </p>
+        )}
+        {doc.ocr_status && !["not_needed", ""].includes(doc.ocr_status) && (
+          <p role="note" className="mt-3 inline-flex items-center gap-2 rounded-lg bg-ice px-3 py-1.5 text-[12.5px] text-deep">
+            <ScanText className="h-4 w-4" aria-hidden />
+            {doc.ocr_status === "applied" || doc.ocr_status === "partial"
+              ? `Text on page${(doc.ocr_pages || []).length === 1 ? "" : "s"} ${(doc.ocr_pages || []).join(", ")} was recognised by OCR from a scanned image${doc.ocr_status === "partial" ? " (some pages could not be read)" : ""}. OCR can contain errors.`
+              : "Scanned pages were detected but could not be read by OCR."}
+          </p>
+        )}
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -163,14 +184,19 @@ function ResourceDetail() {
               <MetaRow label="Region">{doc.region}</MetaRow>
               <MetaRow label="Year">{doc.year}</MetaRow>
               <MetaRow label="Language">{doc.language}</MetaRow>
-              <MetaRow label="Pages">{doc.page_count}</MetaRow>
+              {!doc.metadata_only && <MetaRow label="Pages">{doc.page_count}</MetaRow>}
               <MetaRow label="File">{doc.file_name || "—"}</MetaRow>
               <MetaRow label="Status"><Badge tone="teal">{doc.status === "indexed" ? "Indexed & searchable" : doc.status}</Badge></MetaRow>
               <MetaRow label="Added">{fmtDate(doc.created_at)}</MetaRow>
               <MetaRow label="Views">{fmtNum(doc.views)}</MetaRow>
               <MetaRow label="Source">{doc.source}</MetaRow>
+              {doc.publisher && <MetaRow label="Publisher">{doc.publisher}</MetaRow>}
+              {doc.doi && <MetaRow label="DOI"><a className="text-cyan-deep hover:underline" href={`https://doi.org/${doc.doi}`} target="_blank" rel="noopener noreferrer">{doc.doi}</a></MetaRow>}
+              {doc.license && <MetaRow label="Licence">{doc.license}</MetaRow>}
+              {doc.ocr_status && doc.ocr_status !== "not_needed" && <MetaRow label="OCR">{doc.ocr_status}</MetaRow>}
             </dl>
           </SideCard>
+          <ScientificTrust type="document" slug={doc.slug} />
           <SideCard title="Topics">
             <div className="flex flex-wrap gap-1.5">
               {doc.topics.map((t) => (

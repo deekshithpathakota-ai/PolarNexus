@@ -8,6 +8,7 @@ import {
   Copy,
   ExternalLink,
   FlaskConical,
+  GraduationCap,
   RefreshCw,
   ShieldCheck,
   SquarePen,
@@ -19,6 +20,7 @@ import { useRef, useState } from "react";
 import { Markdown } from "@/components/common/Markdown";
 import { InfoTip, GLOSSARY } from "@/components/common/ui";
 import { TYPE_META } from "@/components/cards/ResourceCard";
+import { VerificationBadge } from "@/components/provenance/Provenance";
 import { post } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AskResponse } from "@/lib/types";
@@ -40,6 +42,27 @@ export function EvidencePill({ status, label }: { status: AskResponse["evidence_
     >
       {status === "strong" ? <ShieldCheck className="h-3.5 w-3.5" /> : <CircleAlert className="h-3.5 w-3.5" />}
       {label}
+    </span>
+  );
+}
+
+const STRENGTH_STYLE: Record<string, string> = {
+  strong: "bg-[#e2f4f1] text-teal",
+  moderate: "bg-[#e3f4fa] text-cyan-deep",
+  limited: "bg-[#fbf1df] text-[#8a5c0c]",
+  insufficient: "bg-[#fbe9e5] text-coral",
+};
+
+/** Four-level, rule-based evidence strength (not a probability). Falls back to the 3-level status for old answers. */
+export function StrengthPill({ res }: { res: AskResponse }) {
+  if (!res.evidence_strength) return <EvidencePill status={res.evidence_status} label={res.evidence_label} />;
+  const s = res.evidence_strength;
+  const label = { strong: "Strong evidence", moderate: "Moderate evidence", limited: "Limited evidence", insufficient: "Insufficient evidence" }[s];
+  return (
+    <span title={res.evidence_strength_label} className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium", STRENGTH_STYLE[s])}>
+      {s === "strong" || s === "moderate" ? <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> : <CircleAlert className="h-3.5 w-3.5" aria-hidden />}
+      {label}
+      <span className="sr-only">: {res.evidence_strength_label}</span>
     </span>
   );
 }
@@ -76,8 +99,13 @@ export function AnswerCard({ res, onRegenerate, regenerating }: { res: AskRespon
   return (
     <article className="animate-fade-up overflow-hidden rounded-2xl border border-frost bg-white shadow-card">
       <div className="flex flex-wrap items-center gap-2 border-b border-frost bg-snow/70 px-5 py-3">
-        <EvidencePill status={res.evidence_status} label={res.evidence_label} />
+        <StrengthPill res={res} />
         <ModeTag mode={res.mode} label={res.mode_label} />
+        {res.audience && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#efedfb] px-2 py-0.5 text-[11.5px] text-[#5a4bb5]">
+            <GraduationCap className="h-3 w-3" aria-hidden /> {res.audience[0].toUpperCase() + res.audience.slice(1)} mode
+          </span>
+        )}
         {res.document && (
           <span className="inline-flex items-center gap-1 rounded-full bg-ice px-2 py-0.5 text-[11.5px] text-deep">
             <BookOpen className="h-3 w-3" /> Scoped to this document
@@ -94,6 +122,15 @@ export function AnswerCard({ res, onRegenerate, regenerating }: { res: AskRespon
         </p>
         <Markdown text={res.answer} onCite={openCite} citeTitle={(n) => res.sources.find((s) => s.n === n)?.title} />
         {res.notice && <p className="mt-3 rounded-lg bg-[#fbf1df] px-3 py-2 text-[13px] text-[#7a520b]">{res.notice}</p>}
+        {!insufficient && res.evidence_basis?.note && (
+          <p role="note" className="mt-3 flex items-start gap-2 rounded-lg border border-dashed border-[#e2c58f] bg-[#fdf8ee] px-3 py-2 text-[12.5px] text-[#7a520b]">
+            <FlaskConical className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>
+              {res.evidence_basis.note}
+              {res.evidence_basis.authoritative > 0 && ` ${res.evidence_basis.authoritative} record(s) come from verified or public sources.`}
+            </span>
+          </p>
+        )}
         {res.mode === "curated_demo" && (
           <p className="mt-3 text-[12px] text-steel">
             This response was prepared in advance for the demonstration because no language model is configured. Every citation opens a real repository passage.
@@ -130,9 +167,9 @@ export function AnswerCard({ res, onRegenerate, regenerating }: { res: AskRespon
                     <span className="block text-[12px] text-steel">
                       {s.kind} · {s.section}
                       {s.resource_type === "document" ? ` · p. ${s.page}` : ""}
-                      {s.is_demo ? " · demo record" : ""}
                     </span>
                   </span>
+                  {s.verification && <VerificationBadge status={s.verification} label={s.verification_label} className="shrink-0" />}
                 </button>
                 {active === s.n && (
                   <div className="ml-8 mt-2">
@@ -146,6 +183,22 @@ export function AnswerCard({ res, onRegenerate, regenerating }: { res: AskRespon
             ))}
           </ol>
         </div>
+      )}
+
+      {res.pipeline && res.pipeline.length > 0 && (
+        <details className="border-t border-frost px-5 py-3 text-[12.5px]">
+          <summary className="cursor-pointer select-none font-mono text-[10.5px] uppercase tracking-wider text-steel hover:text-cyan-deep">
+            How this answer was produced
+          </summary>
+          <ol className="mt-2 grid gap-1 sm:grid-cols-2">
+            {res.pipeline.map((p, i) => (
+              <li key={p.step} className="flex gap-2 text-ink-soft">
+                <span className="font-mono text-[11px] text-mist">{i + 1}.</span>
+                <span><span className="font-medium text-night">{p.step}</span> — {p.detail}</span>
+              </li>
+            ))}
+          </ol>
+        </details>
       )}
 
       {res.related_groups && Object.keys(res.related_groups).length > 0 ? (

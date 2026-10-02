@@ -4,7 +4,7 @@ import { ArrowRight, Bot, LoaderCircle, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ErrorState } from "@/components/common/ui";
 import { ApiError, post } from "@/lib/api";
-import type { AskResponse } from "@/lib/types";
+import type { AskResponse, Audience } from "@/lib/types";
 import { AnswerCard } from "./AnswerCard";
 
 interface Turn {
@@ -15,7 +15,15 @@ interface Turn {
   loading: boolean;
 }
 
-const STAGES = ["Processing question", "Embedding query", "Vector + keyword retrieval", "Ranking evidence", "Composing grounded answer"];
+const STAGES = ["Detecting intent", "Hybrid retrieval", "Ranking evidence", "Checking evidence sufficiency", "Composing grounded answer", "Validating citations"];
+
+const AUDIENCES: { key: Audience | ""; label: string; hint: string }[] = [
+  { key: "", label: "Auto", hint: "Default wording" },
+  { key: "researcher", label: "Researcher", hint: "Technical, quotes passages verbatim" },
+  { key: "teacher", label: "Teacher", hint: "Adds teaching points and discussion questions" },
+  { key: "student", label: "Student", hint: "Simple words and a glossary" },
+  { key: "public", label: "Public", hint: "Plain language for a general audience" },
+];
 
 function Thinking() {
   const [i, setI] = useState(0);
@@ -50,6 +58,7 @@ export function AskPanel({ documentSlug, examples, initialQuestion, placeholder 
 
 }) {
   const [q, setQ] = useState("");
+  const [audience, setAudience] = useState<Audience | "">("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
   const asked = useRef(false);
@@ -61,7 +70,7 @@ export function AskPanel({ documentSlug, examples, initialQuestion, placeholder 
     setTurns((t) => (replaceId ? t.map((x) => (x.id === id ? { ...x, loading: true, error: undefined } : x)) : [...t, { id, question: text, loading: true }]));
     setQ("");
     try {
-      const res = await post<AskResponse>(documentSlug ? "/api/ai/document-question" : "/api/ai/ask", { question: text, document_slug: documentSlug || null });
+      const res = await post<AskResponse>(documentSlug ? "/api/ai/document-question" : "/api/ai/ask", { question: text, document_slug: documentSlug || null, audience: audience || null });
       await new Promise((r) => setTimeout(r, 650)); // let the retrieval stages read clearly
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, res, loading: false } : x)));
     } catch (e) {
@@ -143,9 +152,20 @@ export function AskPanel({ documentSlug, examples, initialQuestion, placeholder 
             Ask <ArrowRight className="h-4 w-4" />
           </button>
         </div>
-        <p className="mt-1.5 px-2 text-[11.5px] text-steel">
-          Answers are grounded in the PolarNexus repository and cite their sources. If evidence is missing, the assistant says so.
-        </p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2">
+          <fieldset className="flex flex-wrap items-center gap-1">
+            <legend className="sr-only">Explanation mode</legend>
+            <span className="mr-1 font-mono text-[10.5px] uppercase tracking-wider text-steel" aria-hidden>Mode</span>
+            {AUDIENCES.map((a) => (
+              <label key={a.key || "auto"} title={a.hint}
+                className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[12px] transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-cyan ${audience === a.key ? "border-cyan-deep bg-cyan-deep text-white" : "border-frost bg-white text-ink-soft hover:border-glacier"}`}>
+                <input type="radio" name="audience" value={a.key} checked={audience === a.key} onChange={() => setAudience(a.key)} className="sr-only" />
+                {a.label}
+              </label>
+            ))}
+          </fieldset>
+          <p className="text-[11.5px] text-steel">Grounded in the repository, with citations. If evidence is missing, the assistant says so.</p>
+        </div>
       </form>
     </div>
   );

@@ -19,12 +19,15 @@ import { useApi } from "@/lib/hooks";
 import type { DatasetDetail, SeriesResponse } from "@/lib/types";
 
 const PALETTE = ["#0f7fa1", "#128a87", "#c98a1b", "#7b6cd9", "#c4553f"];
+const NON_NUMERIC_UNITS = ["text", "name", "id", "ISO date", "ISO datetime", "time component", "category", "identifier"];
 
 function Chart({ slug, ds }: { slug: string; ds: DatasetDetail }) {
   const groupVar = ds.variables.find((v) => ["glacier", "lake", "station"].includes(v.name))?.name;
   const xVar = ds.data_type === "Profiles" ? "depth" : ds.variables.some((v) => v.name === "year") ? "year" : "observed_at";
   const [y, setY] = useState<string | null>(null);
   const [kind, setKind] = useState<"line" | "scatter" | "geo">(ds.data_type === "Profiles" || ds.data_type === "Point observations" ? "scatter" : "line");
+  // only offer a map when records actually carry coordinates (no meaningless charts)
+  const hasGeo = ds.has_coordinates ?? (ds.quality?.georeferenced ?? 0) > 0;
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const { data, error, loading, reload } = useApi<SeriesResponse>(`/api/datasets/${slug}/series`, {
@@ -62,9 +65,9 @@ function Chart({ slug, ds }: { slug: string; ds: DatasetDetail }) {
           value={kind}
           onChange={setKind}
           tabs={[
-            { key: "line", label: "Time series" },
-            { key: "scatter", label: "Scatter" },
-            { key: "geo", label: "Geographic" },
+            { key: "line" as const, label: "Time series" },
+            { key: "scatter" as const, label: "Scatter" },
+            ...(hasGeo ? [{ key: "geo" as const, label: "Geographic" }] : []),
           ]}
         />
       </div>
@@ -124,7 +127,7 @@ function Chart({ slug, ds }: { slug: string; ds: DatasetDetail }) {
 
 function Records({ slug, ds }: { slug: string; ds: DatasetDetail }) {
   const [page, setPage] = useState(1);
-  const numeric = ds.variables.filter((v) => !["text", "name", "id", "ISO date", "ISO datetime"].includes(v.unit) && !["latitude", "longitude", "date", "timestamp"].includes(v.name));
+  const numeric = ds.variables.filter((v) => !NON_NUMERIC_UNITS.includes(v.unit) && !["latitude", "longitude", "date", "timestamp"].includes(v.name));
   const [variable, setVariable] = useState("");
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");

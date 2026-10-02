@@ -75,7 +75,8 @@ def dataset_out(d: Dataset) -> dict:
         "views": d.views, "updated_at": iso(d.updated_at), "url": f"/datasets/{d.slug}",
         "doi": d.doi or "", "creator": d.creator or "", "source_url": d.source_url or "",
         "columns_schema": d.columns_schema or [], "quality_report": d.quality_report or {},
-        "has_coordinates": any(v.get("role") in {"latitude", "longitude"} for v in (d.columns_schema or [])),
+        "has_coordinates": (any(v.get("role") in {"latitude", "longitude"} for v in d.columns_schema)
+                            if d.columns_schema else None),
     }
 
 

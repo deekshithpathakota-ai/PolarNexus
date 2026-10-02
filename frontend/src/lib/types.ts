@@ -1,7 +1,7 @@
 export type ResourceType = "document" | "dataset" | "media" | "expedition" | "station" | "researcher" | "topic" | "activity" | "content";
 
 export type VerificationStatus =
-  | "verified" | "partner_source" | "user_uploaded" | "pending_review" | "demo_data" | "synthetic_demo" | "unverified";
+  | "verified" | "public_source" | "partner_source" | "user_uploaded" | "pending_review" | "demo_data" | "synthetic_demo" | "unverified";
 
 export interface Provenance {
   source_organisation: string;
@@ -70,6 +70,9 @@ export interface SearchResult extends Card {
   match_type: string;
   highlight: string;
   matched_section: string;
+  match_reasons?: string[];
+  score_breakdown?: { text: number; title: number; authority_multiplier: number };
+  visual_match?: { similarity: number; timestamp: string | null; frame_seconds: number | null; frame_url: string | null };
 }
 
 export interface Facets {
@@ -136,6 +139,13 @@ export interface DocumentDetail {
   related: Related;
   citation: string;
   provenance?: Provenance;
+  doi?: string;
+  license?: string;
+  publisher?: string;
+  source_url?: string;
+  ocr_status?: string;
+  ocr_pages?: number[];
+  metadata_only?: boolean;
 }
 
 export interface Variable {
@@ -170,6 +180,113 @@ export interface DatasetDetail {
   related: Related;
   provenance?: Provenance;
   quality?: { records: number; variables: { name: string; unit: string; completeness: number | null }[]; georeferenced: number | null; note: string };
+  doi?: string;
+  creator?: string;
+  source_url?: string;
+  has_coordinates?: boolean;
+  columns_schema?: { name: string; type: string; role: string; missing: number; unique: number; stats?: Record<string, number | string> }[];
+  quality_report?: { issues?: DatasetIssue[]; summary?: { errors: number; warnings: number; verdict: string }; duplicates_dropped?: number; rows_in_file?: number; time_derivation?: string | null };
+}
+
+export interface DatasetIssue {
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  column: string | null;
+  count: number | null;
+  examples: string[];
+}
+
+export interface ColumnInfo {
+  name: string;
+  type: "integer" | "number" | "date" | "datetime" | "boolean" | "category" | "text" | "empty";
+  role: string;
+  missing: number;
+  missing_pct: number;
+  unique: number;
+  examples: string[];
+  invalid?: number;
+  stats?: Record<string, number | string>;
+}
+
+export interface DatasetAnalysis {
+  filename: string;
+  format: string;
+  rows: number;
+  columns: number;
+  schema: ColumnInfo[];
+  roles: Record<string, string>;
+  preview: Record<string, string>[];
+  issues: DatasetIssue[];
+  duplicate_rows: number;
+  duplicates: DuplicateCandidate[];
+  summary: { errors: number; warnings: number; verdict: "pass" | "warn" | "fail" };
+  temporal: { column: string | null; start: string | null; end: string | null };
+  spatial: { bbox: { min_lat: number; max_lat: number; min_lon: number; max_lon: number } | null; suggested_region: string | null };
+  numeric_variables: string[];
+  suggested_charts: string[];
+  suggested_title: string;
+}
+
+export interface DuplicateCandidate {
+  type: string;
+  id: number;
+  slug: string;
+  title: string;
+  url: string;
+  similarity: number;
+  signals: string[];
+  year?: number;
+  status?: string;
+}
+
+export interface DatasetUploadState {
+  token: string;
+  filename: string;
+  format: string;
+  size_bytes: number;
+  status: "analyzed" | "registering" | "registered" | "failed" | "cancelled";
+  steps: ProcessingStep[];
+  error: string;
+  analysis?: DatasetAnalysis;
+  dataset?: { slug: string; title: string; status: string; url: string } | null;
+}
+
+export interface VersionEntry {
+  version: number;
+  change: string;
+  status: string;
+  user: string;
+  date: string | null;
+  changed_fields: string[];
+  snapshot: Record<string, unknown>;
+}
+
+export interface FairRecord {
+  standard: string;
+  fields: { key: string; label: string; term: string; value: unknown; required: boolean }[];
+  missing: string[];
+  completeness: number;
+  verification: { status: VerificationStatus; label: string; is_demo: boolean };
+  orcid_note: string;
+}
+
+export interface LineageStage {
+  key: string;
+  label: string;
+  state: "done" | "pending" | "in_progress" | "missing" | "not_applicable" | "rejected" | "info" | "demo";
+  detail: string;
+  at: string | null;
+  actor: string;
+}
+
+export interface Lineage {
+  kind: string;
+  id: number;
+  title?: string;
+  stages: LineageStage[];
+  generated_from?: { type: string; id: number; slug: string; title: string; url: string; citations: number; sections: string[]; pages: number[]; verification_status?: VerificationStatus; verification_label?: string }[];
+  versions?: number;
 }
 
 export interface SeriesResponse {
@@ -223,6 +340,11 @@ export interface MediaItem {
   processing_steps?: ProcessingStep[];
   processing_error?: string;
   uploaded_by?: number | null;
+  alt_text?: string;
+  caption?: string;
+  source_url?: string;
+  captions_url?: string | null;
+  visual_status?: string;
 }
 
 export interface ProcessingStep {
@@ -346,7 +468,12 @@ export interface Source {
   score: number;
   kind: string;
   is_demo: boolean;
+  verification?: VerificationStatus;
+  verification_label?: string;
 }
+
+export type Audience = "researcher" | "teacher" | "student" | "public";
+export type EvidenceStrength = "strong" | "moderate" | "limited" | "insufficient";
 
 export interface AskResponse {
   question: string;
@@ -365,6 +492,11 @@ export interface AskResponse {
   query_id: number;
   related_groups?: Record<string, (Pick<Card, "type" | "id" | "slug" | "title" | "kind" | "region" | "year" | "url" | "summary" | "is_demo" | "verification" | "verification_label">)[]>;
   synthesis?: { compound: boolean; answered_part: string | null; list_type: string | null; evidence_types: string[]; related_types: string[] };
+  evidence_strength?: EvidenceStrength;
+  evidence_strength_label?: string;
+  evidence_basis?: { records: number; authoritative: number; demonstration: number; other: number; note: string };
+  audience?: Audience | null;
+  pipeline?: { step: string; detail: string }[];
 }
 
 export interface SummaryResponse {
@@ -464,4 +596,92 @@ export interface Paged<T> {
   page: number;
   pages: number;
   results: T[];
+}
+
+
+export interface StoryItem {
+  type: ResourceType;
+  id: number;
+  slug: string;
+  title: string;
+  kind: string;
+  region: string;
+  year: number | null;
+  url: string;
+  summary: string;
+  is_demo: boolean;
+  verification: VerificationStatus;
+  verification_label: string;
+  topics: string[];
+  role: string;
+  note: string;
+  extra: { media_type?: string; scene?: string; thumbnail?: string | null; duration?: string };
+}
+
+export interface StorySummary {
+  label: string;
+  text: string;
+  mode: string;
+  notice: string;
+  based_on?: { type: string; slug: string; title: string };
+  sources: { n: number; chunk_id: number; section: string; page: number; snippet: string; title: string; slug: string; url: string; resource_type: string }[];
+}
+
+export interface Story {
+  id: number;
+  slug: string;
+  title: string;
+  status: "draft" | "published" | "archived";
+  is_demo: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  item_count: number;
+  cover: StoryItem | null;
+  roles: string[];
+  basis: { items: number; demonstration: number; authoritative: number };
+  items?: StoryItem[];
+  timeline?: { date: string; label: string; title: string; type: string; url: string; kind: string }[];
+  map_points?: { lat: number; lon: number; title: string; type: string; url: string; verification: VerificationStatus }[];
+  topics?: StoryItem[];
+  summaries?: Record<"scientific" | "public" | "student", StorySummary>;
+  evidence?: StorySummary["sources"];
+  chain?: { role: string; items: StoryItem[] }[];
+  notice?: string;
+  can_edit?: boolean;
+}
+
+export interface CampaignItemT {
+  id: number;
+  campaign_id: number;
+  title: string;
+  content_type: string;
+  channel: string;
+  channel_label: string;
+  simulated_channels: string[];
+  audience: string;
+  scheduled_for: string | null;
+  status: "planned" | "scheduled" | "published" | "cancelled";
+  notes: string;
+  content: { id: number; title: string; status: ContentStatus; format: string; audience: string; published_at: string | null; is_demo: boolean } | null;
+  blockers: string[];
+  can_schedule: boolean;
+  can_publish: boolean;
+  campaign?: { slug: string; name: string; is_demo: boolean };
+}
+
+export interface CampaignT {
+  id: number;
+  slug: string;
+  name: string;
+  description: string;
+  start_date: string | null;
+  end_date: string | null;
+  audiences: { key: string; label: string }[];
+  topics: string[];
+  channels: { key: string; label: string; simulated: boolean }[];
+  status: "draft" | "scheduled" | "published" | "archived";
+  is_demo: boolean;
+  item_counts: Record<string, number>;
+  items_total: number;
+  items?: CampaignItemT[];
 }

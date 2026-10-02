@@ -1,6 +1,9 @@
 "use client";
 
-import { CircleCheck, Megaphone, ShieldCheck, TriangleAlert } from "lucide-react";
+import { CircleCheck, Link2, Megaphone, ShieldCheck, TriangleAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { post } from "@/lib/api";
+import { LineageView } from "@/components/provenance/Trust";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { BackLink, DetailError, DetailSkeleton, SideCard } from "@/components/common/DetailLayout";
@@ -15,6 +18,25 @@ import type { ContentItem } from "@/lib/types";
 export default function OutreachItem() {
   const { id } = useParams<{ id: string }>();
   const { data: c, error, loading, reload } = useApi<ContentItem & { evidence_summary?: { overall: string | null; checks: { label: string; status: string }[] } }>(`/api/outreach/${id}`);
+  // Live engagement tracking (view on open, completion when the end of the article is reached, share on copy)
+  const sent = useRef<Set<string>>(new Set());
+  const endRef = useRef<HTMLDivElement>(null);
+  const [shared, setShared] = useState(false);
+  const track = (event: "view" | "click" | "share" | "complete") => {
+    if (sent.current.has(event)) return;
+    sent.current.add(event);
+    post(`/api/outreach/${id}/track`, { event, channel: "website" }).catch(() => {});
+  };
+  useEffect(() => {
+    if (!c) return;
+    track("view");
+    const el = endRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && track("complete"), { threshold: 1 });
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c?.id]);
   if (loading && !c) return <DetailSkeleton />;
   if (error || !c) return <DetailError error={error || { message: "Not found", status: 404 }} onRetry={reload} back={{ href: "/outreach", label: "Back to Outreach Feed" }} />;
   return (
@@ -31,7 +53,22 @@ export default function OutreachItem() {
             </div>
             <div className="px-6 py-5">
               <h1 className="mb-3 text-[28px] leading-tight text-night">{c.title}</h1>
-              <Markdown text={c.body || ""} onCite={(n) => document.getElementById(`src-${n}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} citeTitle={(n) => c.citations?.find((x) => x.n === n)?.label} />
+              <Markdown text={c.body || ""} onCite={(n) => { track("click"); document.getElementById(`src-${n}`)?.scrollIntoView({ behavior: "smooth", block: "center" }); }} citeTitle={(n) => c.citations?.find((x) => x.n === n)?.label} />
+              <div ref={endRef} aria-hidden className="h-px" />
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(window.location.href);
+                    setShared(true);
+                    track("share");
+                  } catch {
+                    /* clipboard blocked */
+                  }
+                }}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-frost px-3 py-1.5 text-[13px] text-deep hover:bg-ice"
+              >
+                <Link2 className="h-4 w-4" aria-hidden /> {shared ? "Link copied" : "Copy link to share"}
+              </button>
             </div>
           </Card>
           <Card className="p-5">
@@ -78,6 +115,9 @@ export default function OutreachItem() {
             </SideCard>
           ) : null}
           <ProvenancePanel p={c.provenance} compact />
+          <SideCard title="Provenance pipeline">
+            <LineageView path={`/api/lineage/content/${c.id}`} />
+          </SideCard>
           <Link href="/outreach" className="inline-flex items-center gap-1.5 text-[13px] text-cyan-deep hover:underline"><Megaphone className="h-3.5 w-3.5" /> More outreach</Link>
         </aside>
       </div>

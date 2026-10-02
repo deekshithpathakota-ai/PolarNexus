@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { BadgeCheck, Clock, ExternalLink, FlaskConical, Fingerprint, Handshake, Landmark, ShieldQuestion, Upload } from "lucide-react";
+import { BadgeCheck, Clock, ExternalLink, FlaskConical, Fingerprint, Globe, Handshake, Landmark, ShieldQuestion, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import { Card, InfoTip } from "@/components/common/ui";
 import { fmtDate } from "@/lib/format";
@@ -9,6 +9,7 @@ import type { Provenance, VerificationStatus } from "@/lib/types";
 
 const STYLE: Record<VerificationStatus, { cls: string; icon: typeof BadgeCheck; label: string }> = {
   verified: { cls: "border-[#bfe5df] bg-[#e2f4f1] text-teal", icon: BadgeCheck, label: "Verified" },
+  public_source: { cls: "border-[#b9d9ea] bg-[#eaf5fb] text-[#0d6b8a]", icon: Globe, label: "Public source" },
   partner_source: { cls: "border-[#c2e6f2] bg-[#e3f4fa] text-cyan-deep", icon: Handshake, label: "Partner source" },
   user_uploaded: { cls: "border-[#dcd7f5] bg-[#efedfb] text-[#5a4bb5]", icon: Upload, label: "User uploaded" },
   pending_review: { cls: "border-[#f0dcb4] bg-[#fbf1df] text-[#8a5c0c]", icon: Clock, label: "Pending review" },

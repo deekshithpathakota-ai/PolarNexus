@@ -1,6 +1,6 @@
 "use client";
 
-import { Cpu, Database, Layers, Search, ShieldCheck } from "lucide-react";
+import { Cpu, Database, Layers, ScanEye, ScanText, Search, ShieldCheck } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { AskPanel } from "@/components/ai/AskPanel";
@@ -14,11 +14,13 @@ interface Status {
   llm_model: string | null;
   embedding_description: string;
   vector_backend: string;
+  visual_search?: { enabled: boolean; model?: string; reason?: string | null };
+  ocr?: { available: boolean; engine: string | null };
   fallback: string | null;
   examples: string[];
 }
 
-const STEPS = ["Question", "Query processing", "Embedding", "Vector search", "Keyword search", "Hybrid fusion", "Evidence", "Grounded answer", "Citations"];
+const STEPS = ["Question", "Intent detection", "Query processing", "Hybrid retrieval (keyword + vector)", "Evidence ranking", "Evidence sufficiency check", "Grounded generation", "Citation validation", "Final answer + evidence strength"];
 
 function Assistant() {
   const sp = useSearchParams();
@@ -57,6 +59,8 @@ function Assistant() {
               <li className="flex gap-2"><Database className="mt-0.5 h-4 w-4 shrink-0 text-cyan-deep" /><span><strong className="text-night">Vector store:</strong> {s?.vector_backend || "…"}</span></li>
               <li className="flex gap-2"><Search className="mt-0.5 h-4 w-4 shrink-0 text-cyan-deep" /><span><strong className="text-night">Keyword:</strong> PostgreSQL full-text search (BM25 fallback)</span></li>
               <li className="flex gap-2"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-teal" /><span>Citations are validated: a marker that doesn&apos;t match retrieved evidence is removed.</span></li>
+              <li className="flex gap-2"><ScanEye className="mt-0.5 h-4 w-4 shrink-0 text-cyan-deep" /><span><strong className="text-night">Visual search:</strong> {s ? (s.visual_search?.enabled ? `CLIP (${s.visual_search.model})` : "not available on this server") : "…"}</span></li>
+              <li className="flex gap-2"><ScanText className="mt-0.5 h-4 w-4 shrink-0 text-cyan-deep" /><span><strong className="text-night">OCR:</strong> {s ? (s.ocr?.available ? s.ocr.engine || "tesseract" : "not available on this server") : "…"}</span></li>
             </ul>
           </Card>
         </aside>

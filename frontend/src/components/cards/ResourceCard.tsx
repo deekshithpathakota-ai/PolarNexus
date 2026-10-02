@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { ArrowRight, BookOpen, Building2, CalendarDays, Database, Film, Image as ImageIcon, MapPin, Megaphone, Ship, Tag, UserRound } from "lucide-react";
+import { ArrowRight, BookOpen, Building2, CalendarDays, Database, Film, Image as ImageIcon, MapPin, Megaphone, ScanEye, Ship, Tag, UserRound } from "lucide-react";
 import Link from "next/link";
 import { PolarScene } from "@/components/art/PolarScene";
 import { Badge, DemoBadge, type Tone } from "@/components/common/ui";
@@ -34,7 +34,8 @@ export function TypeBadge({ type, kind }: { type: string; kind?: string }) {
 export function ResourceCard({ item, terms = [], compact, showReason }: { item: CardT | SearchResult; terms?: string[]; compact?: boolean; showReason?: boolean }) {
   const r = item as SearchResult;
   const scene = (item.extra?.scene as string) || null;
-  const thumb = (item.extra?.thumbnail as string) || null;
+  const vm = r.visual_match;
+  const thumb = vm?.frame_url || (item.extra?.thumbnail as string) || null;
   return (
     <Link
       href={item.url}
@@ -52,6 +53,12 @@ export function ResourceCard({ item, terms = [], compact, showReason }: { item: 
           )}
           {item.extra?.media_type === "video" && (
             <span className="absolute bottom-2 right-2 rounded-md bg-abyss/75 px-1.5 py-0.5 font-mono text-[10.5px] text-white">▶ {String(item.extra?.duration || "video")}</span>
+          )}
+          {vm && (
+            <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md bg-abyss/80 px-1.5 py-0.5 font-mono text-[10.5px] text-glacier backdrop-blur">
+              <ScanEye className="h-3 w-3" aria-hidden />
+              {vm.timestamp ? `Relevant frame — ${vm.timestamp}` : "Visual match"}
+            </span>
           )}
         </div>
       )}
@@ -87,6 +94,12 @@ export function ResourceCard({ item, terms = [], compact, showReason }: { item: 
               <span key={c} className="rounded-full bg-[#e2f4f1] px-2 py-0.5 text-teal">{c}</span>
             ))}
           </div>
+        )}
+        {showReason && r.match_reasons && r.match_reasons.length > 0 && (
+          <p className="mt-2 text-[11.5px] leading-relaxed text-steel" title={r.match_reasons.join("\n")}>
+            <span className="font-medium text-ink-soft">Why this matched: </span>
+            {r.match_reasons.slice(0, 4).join(" · ")}
+          </p>
         )}
         <div className="mt-auto flex items-center justify-between gap-3 pt-4">
           <div className="flex min-w-0 flex-wrap gap-1">

@@ -25,6 +25,11 @@ import {
   FlaskConical,
   History,
   TrendingUp,
+  ScanEye,
+  BookOpenText,
+  Rocket,
+  CalendarRange,
+  ChartLine,
   type LucideIcon,
 } from "lucide-react";
 
@@ -65,6 +70,8 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/assistant", label: "AI Assistant", icon: Bot },
       { href: "/explore?mode=semantic", label: "Smart Search", icon: Search },
+      { href: "/visual-search", label: "Visual Media Search", icon: ScanEye },
+      { href: "/stories", label: "Research Stories", icon: BookOpenText },
       { href: "/timeline", label: "Knowledge Timeline", icon: History },
       { href: "/impact", label: "Impact & KPIs", icon: TrendingUp },
     ],
@@ -76,6 +83,9 @@ export const NAV: NavGroup[] = [
       { href: "/outreach", label: "Outreach Feed", icon: Megaphone },
       { href: "/studio", label: "Content Studio", icon: SquarePen, permission: "generate_content" },
       { href: "/review", label: "Review Center", icon: ClipboardCheck, permission: "review" },
+      { href: "/campaigns", label: "Campaign Planner", icon: Rocket, permission: "generate_content" },
+      { href: "/calendar", label: "Content Calendar", icon: CalendarRange, permission: "generate_content" },
+      { href: "/outreach-analytics", label: "Outreach Analytics", icon: ChartLine, permission: "generate_content" },
       { href: "/workspace", label: "Researcher Workspace", icon: FlaskConical, permission: "upload" },
       { href: "/my-knowledge", label: "My Knowledge", icon: Bookmark, auth: true },
     ],

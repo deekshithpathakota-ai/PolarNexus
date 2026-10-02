@@ -1,6 +1,6 @@
 "use client";
 
-import { Captions, Pause, Play } from "lucide-react";
+import { Accessibility, Captions, ExternalLink, Pause, Play, ScanEye } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
@@ -13,6 +13,8 @@ import { DemoBadge, MetaRow } from "@/components/common/ui";
 import { Container } from "@/components/layout/AppShell";
 import { ProcessingSteps } from "@/components/media/ProcessingSteps";
 import { ProvenancePanel } from "@/components/provenance/Provenance";
+import { ScientificTrust } from "@/components/provenance/Trust";
+import { StoryButton } from "@/components/stories/StoryButton";
 import { coord, fmtBytes, fmtDate, fmtDuration, fmtNum } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import type { MediaItem, Related } from "@/lib/types";
@@ -42,13 +44,14 @@ export default function MediaDetail() {
           <figure className="overflow-hidden rounded-2xl border border-frost bg-night shadow-card">
             <div className="relative aspect-[16/10]">
               {real && m.media_type === "video" ? (
-                <video controls preload="metadata" poster={m.thumbnail_url || undefined} className="h-full w-full bg-black object-contain" aria-label={m.title}>
+                <video controls preload="metadata" poster={m.thumbnail_url || undefined} className="h-full w-full bg-black object-contain" aria-label={m.alt_text || m.title}>
                   <source src={m.file_url!} type={m.mime_type || undefined} />
+                  {m.captions_url && <track kind="captions" src={m.captions_url} srcLang="en" label="English captions" default />}
                   Your browser cannot play this video. <a href={m.file_url!}>Download it</a> instead.
                 </video>
               ) : real ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={m.file_url!} alt={m.description || m.title} className="h-full w-full object-contain" />
+                <img src={m.file_url!} alt={m.alt_text || m.description || m.title} className="h-full w-full object-contain" />
               ) : (
                 <>
                   <PolarScene scene={m.scene} seed={m.slug} title={m.title} className={`h-full w-full ${playing ? "animate-[pulse_6s_ease-in-out_infinite]" : ""}`} />
@@ -69,7 +72,15 @@ export default function MediaDetail() {
                 </>
               )}
             </div>
-            <figcaption className="bg-white px-5 py-3 text-[12.5px] text-steel">{m.credit} · {m.license}</figcaption>
+            <figcaption className="bg-white px-5 py-3 text-[12.5px] text-steel">
+              {m.caption && m.caption !== m.description && <span className="mb-1 block text-[13px] text-ink-soft">{m.caption}</span>}
+              {m.credit} · {m.license}
+              {m.source_url && (
+                <a href={m.source_url} target="_blank" rel="noopener noreferrer" className="ml-2 inline-flex items-center gap-1 text-cyan-deep hover:underline">
+                  Original <ExternalLink className="h-3 w-3" aria-hidden />
+                </a>
+              )}
+            </figcaption>
           </figure>
           {!ready && (
             <SideCard title="Processing">
@@ -88,6 +99,27 @@ export default function MediaDetail() {
               </button>
             </SideCard>
           )}
+          <SideCard title="Accessibility">
+            <dl>
+              <MetaRow label="Alt text">{m.alt_text ? m.alt_text : <span className="italic text-mist">Not provided — the description is used instead</span>}</MetaRow>
+              {m.media_type === "video" && (
+                <>
+                  <MetaRow label="Captions">{m.captions_url ? "WebVTT caption track available in the player" : <span className="italic text-mist">Unavailable for this video</span>}</MetaRow>
+                  <MetaRow label="Transcript">{m.transcript ? "Available below" : <span className="italic text-mist">Unavailable for this video</span>}</MetaRow>
+                </>
+              )}
+              {real && (
+                <MetaRow label="Visual index">
+                  <span className="inline-flex items-center gap-1.5">
+                    <ScanEye className="h-3.5 w-3.5 text-cyan-deep" aria-hidden />
+                    {m.visual_status === "indexed" ? (m.media_type === "video" ? "Key frames embedded for visual search" : "Embedded for visual search") :
+                      m.visual_status === "failed" ? "Visual embedding failed" : "Not visually indexed (visual search unavailable on this server)"}
+                  </span>
+                </MetaRow>
+              )}
+              {m.is_demo && <MetaRow label="Note"><span className="inline-flex items-center gap-1.5"><Accessibility className="h-3.5 w-3.5" aria-hidden />Illustrative artwork — described by its title and description.</span></MetaRow>}
+            </dl>
+          </SideCard>
           <RelatedKnowledge related={m.related} graph={{ type: "media", slug: m.slug }} />
         </div>
         <aside className="space-y-4">
@@ -98,9 +130,13 @@ export default function MediaDetail() {
             </div>
             <h1 className="text-[28px] leading-tight text-night">{m.title}</h1>
             <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">{m.description}</p>
-            <div className="mt-4 flex flex-wrap gap-2"><ResourceActions itemType="media" slug={m.slug} label={m.title} citation={`${m.title} (${m.year}). ${m.credit}. ${m.license}.`} download={real ? m.file_url! : undefined} /></div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <ResourceActions itemType="media" slug={m.slug} label={m.title} citation={`${m.title} (${m.year}). ${m.credit}. ${m.license}.`} download={real ? m.file_url! : undefined} />
+              <StoryButton type="media" slug={m.slug} variant="subtle" />
+            </div>
           </div>
           <ProvenancePanel p={m.provenance} compact />
+          <ScientificTrust type="media" slug={m.slug} />
           <SideCard title="Details">
             <dl>
               <MetaRow label="Category">{m.category}</MetaRow>

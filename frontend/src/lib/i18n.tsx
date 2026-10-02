@@ -28,6 +28,8 @@ const HI: Record<string, string> = {
   "Ask AI": "एआई से पूछें", "Sign in": "साइन इन करें", Map: "मानचित्र", Menu: "मेनू",
   "Demo corpus — not official institutional data.": "डेमो संग्रह — आधिकारिक संस्थागत डेटा नहीं।",
   "Language": "भाषा", "Prototype translation": "प्रोटोटाइप अनुवाद",
+  "Research Stories": "शोध कहानियाँ", "Visual Media Search": "दृश्य मीडिया खोज", "Campaign Planner": "अभियान योजनाकार",
+  "Content Calendar": "सामग्री कैलेंडर", "Outreach Analytics": "आउटरीच विश्लेषण",
 };
 const TE: Record<string, string> = {
   Discover: "కనుగొనండి", Intelligence: "మేధస్సు", Outreach: "ఔట్‌రీచ్", Management: "నిర్వహణ",
@@ -42,6 +44,8 @@ const TE: Record<string, string> = {
   "Ask AI": "AIని అడగండి", "Sign in": "సైన్ ఇన్", Map: "పటం", Menu: "మెను",
   "Demo corpus — not official institutional data.": "డెమో సేకరణ — అధికారిక సంస్థాగత డేటా కాదు.",
   "Language": "భాష", "Prototype translation": "ప్రోటోటైప్ అనువాదం",
+  "Research Stories": "పరిశోధన కథనాలు", "Visual Media Search": "దృశ్య మీడియా శోధన", "Campaign Planner": "ప్రచార ప్రణాళిక",
+  "Content Calendar": "కంటెంట్ క్యాలెండర్", "Outreach Analytics": "ఔట్‌రీచ్ విశ్లేషణలు",
 };
 const DICTS: Record<Lang, Record<string, string>> = { en: {}, hi: HI, te: TE };
 const KEY = "polarnexus.lang";

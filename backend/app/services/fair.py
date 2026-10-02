@@ -107,8 +107,14 @@ def build(db: Session, cat: Catalog, rtype: str, obj, version: int | None = None
     if contributors and rtype not in {"researcher"}:
         v["contributor"] = contributors
     rows, missing = [], []
-    required = [k for k, _, _, req in FIELDS if req]
+
+    def needed(key: str, req: bool) -> bool:
+        # language describes text; it is not a required property of photographs, places or people
+        return req and not (key == "language" and rtype not in {"document", "dataset"})
+
+    required = [k for k, _, _, req in FIELDS if needed(k, req)]
     for key, label, term, req in FIELDS:
+        req = needed(key, req)
         val = _nz(v.get(key))
         rows.append({"key": key, "label": label, "term": term, "value": val, "required": req})
         if val is None and req:

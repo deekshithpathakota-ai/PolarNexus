@@ -22,9 +22,9 @@ def audit(
         AuditLog(
             user_id=user.id if user else None,
             user_email=user.email if user else "anonymous",
-            action=action,
-            resource_type=resource_type,
-            resource_id=str(resource_id),
+            action=action[:64],
+            resource_type=resource_type[:32],
+            resource_id=str(resource_id)[:64],  # column is VARCHAR(64); PostgreSQL rejects longer slugs
             detail=detail[:2000],
             status=status,
         )

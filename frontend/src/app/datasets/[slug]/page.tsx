@@ -11,7 +11,10 @@ import { BackLink, DetailError, DetailSkeleton, SideCard } from "@/components/co
 import { ResourceActions } from "@/components/common/ResourceActions";
 import { Card, DemoBadge, MetaRow } from "@/components/common/ui";
 import { OutreachButton } from "@/components/outreach/OutreachButton";
-import { ProvenancePanel } from "@/components/provenance/Provenance";
+import { ProvenancePanel, VerificationBadge } from "@/components/provenance/Provenance";
+import { ScientificTrust } from "@/components/provenance/Trust";
+import { StoryButton } from "@/components/stories/StoryButton";
+import { DatasetQuality } from "@/components/datasets/DatasetQuality";
 import { Container } from "@/components/layout/AppShell";
 import { fmtDate, fmtNum } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
@@ -29,7 +32,11 @@ export default function DatasetPage() {
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <TypeBadge type="dataset" kind={ds.data_type} />
           <span className="inline-flex items-center gap-1 text-[13px] text-steel"><MapPin className="h-3.5 w-3.5" /> {ds.region}</span>
-          <DemoBadge label="Synthetic demonstration values" />
+          {ds.provenance?.verification_status === "synthetic_demo" || (!ds.provenance && ds.is_demo) ? (
+            <DemoBadge label="Synthetic demonstration values" />
+          ) : (
+            ds.provenance && <VerificationBadge status={ds.provenance.verification_status} label={ds.provenance.verification_label} official={ds.provenance.official} />
+          )}
         </div>
         <h1 className="text-[30px] leading-tight text-night md:text-[38px]">{ds.title}</h1>
         <p className="mt-3 max-w-3xl text-[15.5px] leading-relaxed text-ink-soft">{ds.description}</p>
@@ -37,6 +44,7 @@ export default function DatasetPage() {
           <ResourceActions itemType="dataset" slug={ds.slug} label={ds.title} download={`/api/datasets/${ds.slug}/download`}
             citation={`${ds.source} (${ds.year}). ${ds.title} [${ds.format}]. ${ds.license}. PolarNexus record /datasets/${ds.slug}.`} />
           <OutreachButton type="dataset" slug={ds.slug} size="sm" />
+          <StoryButton type="dataset" slug={ds.slug} />
         </div>
       </header>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -46,6 +54,7 @@ export default function DatasetPage() {
               <DatasetExplorer ds={ds} />
             </ErrorBoundary>
           </Card>
+          {(ds.quality_report?.issues || ds.columns_schema?.length) ? <DatasetQuality ds={ds} /> : null}
           <RelatedKnowledge related={ds.related} graph={{ type: "dataset", slug: ds.slug }} />
         </div>
         <aside className="space-y-4">
@@ -59,9 +68,13 @@ export default function DatasetPage() {
               <MetaRow label="Size">{ds.size_label}</MetaRow>
               <MetaRow label="License">{ds.license}</MetaRow>
               <MetaRow label="Source">{ds.source}</MetaRow>
+              {ds.creator && <MetaRow label="Creator">{ds.creator}</MetaRow>}
+              {ds.source_url && <MetaRow label="Original file"><a href={ds.source_url} target="_blank" rel="noopener noreferrer" className="break-all text-cyan-deep hover:underline">{ds.source_url.replace(/^https?:\/\//, "")}</a></MetaRow>}
+              <MetaRow label="DOI">{ds.doi ? <a className="text-cyan-deep hover:underline" href={`https://doi.org/${ds.doi}`} target="_blank" rel="noopener noreferrer">{ds.doi}</a> : <span className="italic text-mist">Not recorded</span>}</MetaRow>
               <MetaRow label="Updated">{fmtDate(ds.updated_at)}</MetaRow>
             </dl>
           </SideCard>
+          <ScientificTrust type="dataset" slug={ds.slug} />
           {ds.quality && (
             <SideCard title="Variables, units & completeness">
               <ul className="space-y-1.5">

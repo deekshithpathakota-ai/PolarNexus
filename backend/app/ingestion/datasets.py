@@ -227,10 +227,11 @@ def infer_column(name: str, values: list[str]) -> dict:
                          "std": round(statistics.pstdev(num_ok), 4) if len(num_ok) > 1 else 0.0, "count": len(num_ok)}
         info["fill_values"] = sorted({v for v in present if v in FILL_VALUES})
     elif date_ratio >= 0.7:
-        info.update(type="datetime" if any(d.hour or d.minute for d in date_ok) else "date",
-                    invalid=len(present) - len(date_ok))
+        kind = "datetime" if any(d.hour or d.minute for d in date_ok) else "date"
+        info.update(type=kind, invalid=len(present) - len(date_ok))
         info["invalid_examples"] = [v for v, d in zip(present, dates) if d is None][:3]
-        info["stats"] = {"min": min(date_ok).isoformat()[:19], "max": max(date_ok).isoformat()[:19], "count": len(date_ok)}
+        n = 19 if kind == "datetime" else 10
+        info["stats"] = {"min": min(date_ok).isoformat()[:n], "max": max(date_ok).isoformat()[:n], "count": len(date_ok)}
     elif bools and len(present) > 1:
         info.update(type="boolean", invalid=0)
     else:
@@ -348,7 +349,7 @@ def analyze(filename: str, data: bytes) -> dict:
     return {
         "filename": filename, "format": ext.lstrip(".").upper(), "format_detail": fmt_info,
         "rows": len(rows), "columns": len(cols), "schema": columns, "roles": by_role,
-        "preview": rows[:20], "issues": issues, "duplicates": dup,
+        "preview": rows[:20], "issues": issues, "duplicate_rows": dup, "duplicates": [],
         "summary": {"errors": errors, "warnings": warnings,
                     "verdict": "fail" if errors else "warn" if warnings else "pass"},
         "temporal": {"column": time_mode, "start": t_min, "end": t_max},

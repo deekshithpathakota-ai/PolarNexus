@@ -96,3 +96,47 @@ h1, h2, h3, .font-display {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }
+
+/* ------------------------------------------------------------------ v3 sign-in experience */
+.pn-aurora {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+.pn-aurora-1 { width: 70vmax; height: 22vmax; left: -10vmax; top: 6vh; opacity: 0.42;
+  background: linear-gradient(90deg, transparent, #4fd1a5 30%, #1aa3c8 70%, transparent); animation: pn-aurora-a 26s ease-in-out infinite alternate; }
+.pn-aurora-2 { width: 60vmax; height: 16vmax; right: -14vmax; top: 18vh; opacity: 0.28;
+  background: linear-gradient(90deg, transparent, #1aa3c8 35%, #7b6cd9 80%, transparent); animation: pn-aurora-b 34s ease-in-out infinite alternate; }
+.pn-aurora-3 { width: 50vmax; height: 12vmax; left: 20vw; top: 30vh; opacity: 0.16;
+  background: linear-gradient(90deg, transparent, #4fd1a5, transparent); animation: pn-aurora-a 40s ease-in-out infinite alternate-reverse; }
+@keyframes pn-aurora-a { from { transform: translate3d(0, 0, 0) rotate(-8deg) scaleX(1); } to { transform: translate3d(8vw, 4vh, 0) rotate(-3deg) scaleX(1.15); } }
+@keyframes pn-aurora-b { from { transform: translate3d(0, 0, 0) rotate(6deg); } to { transform: translate3d(-10vw, 6vh, 0) rotate(2deg); } }
+
+.pn-grid { animation: pn-spin 260s linear infinite; transform-origin: 50% 50%; }
+@keyframes pn-spin { to { transform: rotate(360deg); } }
+.pn-orbit { animation: pn-spin 2.4s linear infinite; }
+
+.pn-logo-in { animation: pn-logo-in 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes pn-logo-in { from { opacity: 0; transform: scale(0.86); } to { opacity: 1; transform: scale(1); } }
+.pn-rise { animation: pn-rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes pn-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+.pn-card-in { animation: pn-card-in 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) 0.1s both; }
+@keyframes pn-card-in { from { opacity: 0; transform: translateY(14px); filter: blur(6px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+
+.pn-input { transition: border-color 0.2s ease, box-shadow 0.25s ease, background-color 0.2s ease; }
+.pn-input:focus { border-color: var(--color-cyan); box-shadow: 0 0 0 3px rgba(26, 163, 200, 0.16), 0 6px 22px -10px rgba(26, 163, 200, 0.55); outline: none; background: #fff; }
+
+.pn-sheen { position: relative; overflow: hidden; isolation: isolate; }
+.pn-sheen::after {
+  content: ""; position: absolute; inset: -40% auto -40% -60%; width: 45%; z-index: -1;
+  background: linear-gradient(100deg, transparent, rgba(159, 211, 230, 0.45), rgba(79, 209, 165, 0.35), transparent);
+  transform: skewX(-18deg); transition: left 0.75s ease;
+}
+.pn-sheen:hover::after, .pn-sheen:focus-visible::after { left: 120%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pn-aurora, .pn-grid, .pn-orbit { animation: none !important; }
+  .pn-sheen::after { display: none; }
+}
