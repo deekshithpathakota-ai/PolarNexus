@@ -14,7 +14,21 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.content.evidence_check import run_evidence_check
-from app.models import Citation, Dataset, Document, DocumentChunk, GeneratedContent, ResourceLink, ResourceTopic, Topic, User
+from app.models import (
+    Citation,
+    Dataset,
+    Document,
+    DocumentChunk,
+    Expedition,
+    GeneratedContent,
+    InstitutionalActivity,
+    Researcher,
+    ResourceLink,
+    ResourceTopic,
+    Station,
+    Topic,
+    User,
+)
 from app.rag.llm import LLMUnavailable, get_llm
 from app.rag.simplify import glossary_for, simplify
 from app.utils.text import split_sentences
@@ -28,7 +42,20 @@ FORMATS = {
     "student": ("Student — Simple explanation", "education"),
     "public": ("Public — Plain-language explanation", "public"),
     "media": ("Media — Press-style research summary", "media"),
+    "summary": ("Research Summary — Structured summary", "research"),
+    "newsletter": ("Newsletter — Short feature", "newsletter"),
+    "expedition_update": ("Expedition Update — Field news", "website"),
+    "highlight": ("Research Highlight — Short highlight", "website"),
 }
+
+AUDIENCES = {
+    "researchers": "Researchers", "students": "Students", "teachers": "Teachers",
+    "general_public": "General Public", "media": "Media", "policy": "Policy / Institutional",
+}
+DEFAULT_AUDIENCE = {"student": "students", "public": "general_public", "media": "media", "linkedin": "researchers",
+                    "summary": "researchers", "instagram": "general_public", "website": "general_public",
+                    "newsletter": "general_public", "expedition_update": "general_public", "highlight": "general_public"}
+SIMPLE_AUDIENCES = {"students", "teachers", "general_public"}
 
 HOOKS = {
     "sea-ice": "Why does Antarctic sea ice change so much from one year to the next?",
@@ -97,6 +124,21 @@ def gather_evidence(db: Session, resource_type: str, slug: str | None = None,
                           .order_by(Document.views.desc())).all()[:3]
         for d in docs:
             chunks.extend((c, d.title, d.slug) for c in doc_chunks(d, 2))
+    elif resource_type in {"expedition", "station", "researcher", "activity"} and slug:
+        model = {"expedition": Expedition, "station": Station, "researcher": Researcher, "activity": InstitutionalActivity}[resource_type]
+        obj = db.scalar(select(model).where(model.slug == slug))
+        if not obj:
+            raise LookupError(f"{resource_type.title()} not found")
+        rid, title = obj.id, getattr(obj, "name", None) or obj.title
+        if resource_type != "researcher":
+            own = db.scalars(select(DocumentChunk).where(DocumentChunk.resource_type == resource_type,
+                                                         DocumentChunk.resource_id == obj.id)).all()
+            chunks = [(c, title, obj.slug) for c in own]
+        doc_ids = _linked_ids(db, resource_type, obj.id, "document")
+        docs = db.scalars(select(Document).where(Document.id.in_(doc_ids), Document.visibility == "public",
+                                                 Document.status != "archived").order_by(Document.views.desc())).all()
+        for d in docs[:3 if resource_type == "researcher" else 2]:
+            chunks.extend((c, d.title, d.slug) for c in doc_chunks(d, 3))
     elif chunk_ids:
         rows = db.scalars(select(DocumentChunk).where(DocumentChunk.id.in_(chunk_ids))).all()
         for c in rows:
@@ -106,7 +148,7 @@ def gather_evidence(db: Session, resource_type: str, slug: str | None = None,
     else:
         raise LookupError("Select a document, dataset or topic as the source.")
 
-    if not topic_slugs and rid is not None and resource_type in {"document", "dataset"}:
+    if not topic_slugs and rid is not None and resource_type in {"document", "dataset", "expedition", "station", "researcher", "activity"}:
         topic_slugs = [t.slug for t in db.scalars(select(Topic).join(ResourceTopic, ResourceTopic.topic_id == Topic.id)
                                                   .where(ResourceTopic.resource_type == resource_type,
                                                          ResourceTopic.resource_id == rid))]
@@ -115,6 +157,15 @@ def gather_evidence(db: Session, resource_type: str, slug: str | None = None,
     if not sources:
         raise LookupError("The selected resource has no indexed text to generate from.")
     return resource_type, rid, title, sources, topic_slugs
+
+
+def _linked_ids(db: Session, rtype: str, rid: int, target: str) -> list[int]:
+    ids = []
+    for l in db.scalars(select(ResourceLink).where(
+            ((ResourceLink.source_type == rtype) & (ResourceLink.source_id == rid) & (ResourceLink.target_type == target)) |
+            ((ResourceLink.target_type == rtype) & (ResourceLink.target_id == rid) & (ResourceLink.source_type == target)))):
+        ids.append(l.target_id if l.source_type == rtype else l.source_id)
+    return ids
 
 
 def _sentences(sources: list[Source], sections: set[str], limit: int) -> list[tuple[str, int]]:
@@ -132,8 +183,35 @@ def _hashtags(topic_slugs: list[str]) -> str:
     return " ".join(dict.fromkeys(tags))
 
 
-def template_draft(fmt: str, title: str, sources: list[Source], topic_slugs: list[str]) -> tuple[str, str]:
-    abstract = _sentences(sources, {"Abstract", "Background", "Dataset description", "Voyage Summary"}, 3)
+def template_draft(fmt: str, title: str, sources: list[Source], topic_slugs: list[str],
+                   audience: str | None = None) -> tuple[str, str]:
+    headline, body = _template_core(fmt, title, sources, topic_slugs, audience)
+    return headline, _audience_extras(body, audience, sources, title)
+
+
+def _audience_extras(body: str, audience: str | None, sources: list[Source], title: str) -> str:
+    """Audience-specific additions. Questions are not claims; decision-maker points are cited source sentences."""
+    if audience == "teachers":
+        qs = [f"- What does the source say about {title.lower() if len(title) < 60 else 'this research'}?",
+              "- Which observations or data did the researchers rely on?",
+              "- What limitations or uncertainties are mentioned, and why do they matter?"]
+        body += "\n\n**Discussion questions for the classroom**\n\n" + "\n".join(qs)
+    elif audience == "policy":
+        pts = _sentences(sources, {"Implications and Outreach Relevance", "Why It Matters", "Significance", "Recommendations",
+                                   "Limitations", "Lessons"}, 3)
+        if pts:
+            body += "\n\n**Points for decision-makers (from the source)**\n\n" + "\n".join(f"- {s} [{n}]" for s, n in pts)
+    elif audience == "researchers":
+        meth = _sentences(sources, {"Data and Methods", "Methods", "Programme"}, 1)
+        if meth and meth[0][0] not in body:
+            body += f"\n\n**Methods**\n\n{meth[0][0]} [{meth[0][1]}]"
+    return body
+
+
+def _template_core(fmt: str, title: str, sources: list[Source], topic_slugs: list[str],
+                   audience: str | None = None) -> tuple[str, str]:
+    abstract = _sentences(sources, {"Abstract", "Background", "Dataset description", "Voyage Summary", "Expedition overview",
+                                    "Station overview", "Institutional activity", "Researcher profile"}, 3)
     findings = _sentences(sources, {"Key Findings", "Preliminary Findings", "Outcome", "Highlights", "Data Collected",
                                     "Key Concepts", "Significance"}, 4)
     implic = _sentences(sources, {"Implications and Outreach Relevance", "Why It Matters", "Significance", "Lessons", "Legacy"}, 2)
@@ -145,6 +223,9 @@ def template_draft(fmt: str, title: str, sources: list[Source], topic_slugs: lis
 
     def simp(s):
         return simplify(s, used)
+
+    plain = audience in SIMPLE_AUDIENCES  # simplify wording for lay audiences in any format
+    lay = simp if plain else (lambda x: x)
 
     def tidy(s):
         s = re.sub(r"^(First|Second|Third|Fourth|Fifth),\s*", "", s)
@@ -196,6 +277,38 @@ def template_draft(fmt: str, title: str, sources: list[Source], topic_slugs: lis
             lim = cite(limits, simp)[0]
             body.append("The researchers are careful to note the limits of their work: " + lim[0].lower() + lim[1:])
         return headline, "\n\n".join(body)
+    if fmt == "summary":
+        headline = f"Research Summary: {title}"
+        body = ["**Overview**", " ".join(cite(abstract[:2], lay)), "**Key findings**", *[f"- {x}" for x in cite(findings[:4], lay)]]
+        meth = _sentences(sources, {"Data and Methods", "Methods"}, 1)
+        if meth:
+            body += ["**Data and methods**", " ".join(cite(meth, lay))]
+        if implic:
+            body += ["**Significance**", " ".join(cite(implic[:1], lay))]
+        if limits:
+            body += ["**Limitations**", " ".join(cite(limits, lay))]
+        return headline, "\n\n".join(body)
+    if fmt == "newsletter":
+        headline = f"Newsletter: {title}"
+        body = [hook or f"From the repository: {title}", " ".join(cite(abstract[:2], lay)),
+                "**In brief**", *[f"- {x}" for x in cite(findings[:3], lay)]]
+        if limits:
+            body.append("A note of caution from the source: " + cite(limits, lay)[0])
+        body.append("Read the full record in the PolarNexus repository.")
+        return headline, "\n\n".join(body)
+    if fmt == "expedition_update":
+        headline = f"Expedition Update: {title}"
+        overview = _sentences(sources, {"Expedition overview", "Voyage Summary", "Programme"}, 2) or abstract[:2]
+        body = [" ".join(cite(overview, lay)), "**From the field**", *[f"- {x}" for x in cite(findings[:3], lay)]]
+        if implic:
+            body += ["**Why it matters**", " ".join(cite(implic[:1], lay))]
+        return headline, "\n\n".join(body)
+    if fmt == "highlight":
+        headline = f"Research Highlight: {title}"
+        body = [" ".join(cite(abstract[:1], lay)), " ".join(cite(findings[:2], lay))]
+        if implic:
+            body.append(" ".join(cite(implic[:1], lay)))
+        return headline, "\n\n".join(body)
     if fmt == "media":
         headline = f"Media Brief: {title}"
         body = [f"**{title}** — research summary for media", " ".join(cite(abstract[:2])),
@@ -225,11 +338,11 @@ CURATED_STUDENT_FLAGSHIP = (
 )
 
 
-def _llm_draft(fmt: str, title: str, sources: list[Source]) -> tuple[str, str] | None:
+def _llm_draft(fmt: str, title: str, sources: list[Source], audience: str | None = None) -> tuple[str, str] | None:
     llm = get_llm()
     if not llm:
         return None
-    label = FORMATS[fmt][0]
+    label = FORMATS[fmt][0] + (f" Audience: {AUDIENCES.get(audience or '', 'general readers')}." if audience else "")
     ev = "\n\n".join(f"[{s.n}] {s.title} — {s.chunk.section}\n{s.chunk.text}" for s in sources)
     system = ("You write science outreach content for a polar research knowledge platform. Use ONLY facts from the "
               "numbered evidence. Cite each factual sentence with [n]. Do not invent statistics, quotes, names or "
@@ -242,13 +355,18 @@ def _llm_draft(fmt: str, title: str, sources: list[Source]) -> tuple[str, str] |
 
 
 def create_draft(db: Session, user: User | None, fmt: str, resource_type: str, slug: str | None = None,
-                 chunk_ids: list[int] | None = None, prefer_curated: bool = True) -> GeneratedContent:
+                 chunk_ids: list[int] | None = None, prefer_curated: bool = True,
+                 audience: str | None = None) -> GeneratedContent:
     if fmt not in FORMATS:
         raise ValueError(f"Unsupported format '{fmt}'.")
+    if audience and audience not in AUDIENCES:
+        raise ValueError(f"Unsupported audience '{audience}'.")
+    audience = audience or DEFAULT_AUDIENCE.get(fmt, "general_public")
     rtype, rid, title, sources, topic_slugs = gather_evidence(db, resource_type, slug, chunk_ids)
     mode = "template"
     headline, body = None, None
-    if prefer_curated and get_llm() is None and fmt == "student" and slug == "antarctic-sea-ice-variability-study":
+    if prefer_curated and get_llm() is None and fmt == "student" and audience == "students" \
+            and slug == "antarctic-sea-ice-variability-study":
         wanted = ["Background", "Key Findings", "Implications and Outreach Relevance"]
         picked = []
         for sec in wanted:
@@ -260,14 +378,14 @@ def create_draft(db: Session, user: User | None, fmt: str, resource_type: str, s
             headline, body, mode = f"For Students: {title}", CURATED_STUDENT_FLAGSHIP, "curated_demo"
     if body is None:
         try:
-            res = _llm_draft(fmt, title, sources)
+            res = _llm_draft(fmt, title, sources, audience)
             if res:
                 headline, body = res
                 mode = "llm"
         except LLMUnavailable:
             log.warning("LLM unavailable; using template generator")
     if body is None:
-        headline, body = template_draft(fmt, title, sources, topic_slugs)
+        headline, body = template_draft(fmt, title, sources, topic_slugs, audience)
         mode = "template"
 
     used_ns = {int(n) for n in re.findall(r"\[(\d+)\]", body)}
@@ -277,12 +395,12 @@ def create_draft(db: Session, user: User | None, fmt: str, resource_type: str, s
     content = GeneratedContent(
         title=headline or title, format=fmt, body=body, status="draft", generation_mode=mode,
         resource_type=rtype, resource_id=rid, resource_title=title, created_by=user.id if user else None,
-        channels=[], is_demo=False,
+        channels=[], is_demo=False, audience=audience, language="English",
     )
     for s in kept:
         content.citations.append(Citation(chunk_id=s.chunk.id, position=renumber[s.n], resource_type=s.rtype,
                                           resource_id=s.rid, resource_slug=s.slug, label=s.title,
-                                          section=s.chunk.section, quote=s.chunk.text))
+                                          section=s.chunk.section, page=s.chunk.page, quote=s.chunk.text))
     content.evidence_check = run_evidence_check(body, [c.quote for c in content.citations], len(content.citations))
     db.add(content)
     db.flush()
@@ -290,5 +408,16 @@ def create_draft(db: Session, user: User | None, fmt: str, resource_type: str, s
 
 
 def recheck(content: GeneratedContent) -> dict:
-    content.evidence_check = run_evidence_check(content.body, [c.quote for c in content.citations], len(content.citations))
-    return content.evidence_check
+    check = run_evidence_check(content.body, [c.quote for c in content.citations], len(content.citations))
+    if (content.language or "English") != "English":
+        # Lexical support matching compares words with English sources — it cannot judge a translation.
+        for c in check["checks"]:
+            if c["id"] in {"claims_supported", "numbers", "overclaiming", "source_mismatch"}:
+                c["status"], c["detail"] = "warn", "Not applicable to translated text — a bilingual editor must verify."
+        check["checks"].append({"id": "translation", "label": "Translation review", "status": "warn",
+                                "detail": f"{content.language} translation of an English draft. Confirm meaning, numbers "
+                                          "and citation markers against the original before approval."})
+        check["sentences"] = []
+        check["overall"] = "fail" if any(c["status"] == "fail" for c in check["checks"]) else "warn"
+    content.evidence_check = check
+    return check

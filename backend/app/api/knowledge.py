@@ -18,6 +18,7 @@ from app.models import (
     DatasetRecord,
     Document,
     Expedition,
+    InstitutionalActivity,
     Media,
     Researcher,
     ResourceTopic,
@@ -28,6 +29,7 @@ from app.models import (
 from app.search.service import search_resources
 from app.services.audit import track
 from app.services.catalog import Catalog, Filters, build_catalog
+from app.services.provenance import get_provenance
 from app.services.serializers import (
     dataset_out,
     document_out,
@@ -133,6 +135,7 @@ def get_resource(slug: str, db: Session = Depends(get_db), user: User | None = D
     out["topics"] = _topics(db, "document", doc.id)
     out["related"] = _related_block(cat, "document", doc.id)
     out["citation"] = citation_text(doc)
+    out["provenance"] = get_provenance(db, "document", doc)
     return out
 
 
@@ -169,7 +172,24 @@ def get_dataset(slug: str, db: Session = Depends(get_db), user: User | None = De
     out = dataset_out(ds)
     out["topics"] = _topics(db, "dataset", ds.id)
     out["related"] = _related_block(cat, "dataset", ds.id)
+    out["provenance"] = get_provenance(db, "dataset", ds)
+    out["quality"] = _dataset_quality(db, ds)
     return out
+
+
+def _dataset_quality(db: Session, ds: Dataset) -> dict:
+    """Completeness of each variable across records — a measured, not asserted, quality indicator."""
+    rows = db.scalars(select(DatasetRecord.values).where(DatasetRecord.dataset_id == ds.id)).all()
+    total = len(rows)
+    per_var = []
+    for v in ds.variables:
+        present = sum(1 for r in rows if r.get(v["name"]) not in (None, ""))
+        per_var.append({"name": v["name"], "unit": v.get("unit", ""), "completeness": round(present / total, 3) if total else None})
+    with_coords = db.scalar(select(func.count()).select_from(DatasetRecord).where(
+        DatasetRecord.dataset_id == ds.id, DatasetRecord.latitude.is_not(None))) or 0
+    return {"records": total, "variables": per_var, "georeferenced": round(with_coords / total, 3) if total else None,
+            "note": "Completeness is computed from the stored records. Values are synthetic demonstration data."
+            if ds.is_demo else "Completeness is computed from the stored records."}
 
 
 @router.get("/datasets/{slug}/records")
@@ -282,10 +302,15 @@ def list_media(params: dict = Depends(_common), category: str | None = None, med
 def get_media(slug: str, db: Session = Depends(get_db), user: User | None = Depends(get_current_user_optional)):
     m = _get_or_404(db, Media, slug, "Media item")
     cat = build_catalog(db, user)
-    _view(db, m, "media", user)
+    owner = bool(user and m.uploaded_by == user.id)
+    if not cat.card("media", m.id) and not owner:
+        raise HTTPException(404, "Media item not found or not available to your role.")
+    if cat.card("media", m.id):
+        _view(db, m, "media", user)
     out = media_out(m)
     out["topics"] = _topics(db, "media", m.id)
     out["related"] = _related_block(cat, "media", m.id)
+    out["provenance"] = get_provenance(db, "media", m)
     return out
 
 
@@ -311,6 +336,7 @@ def get_expedition(slug: str, db: Session = Depends(get_db), user: User | None =
     out = expedition_out(e)
     out["topics"] = _topics(db, "expedition", e.id)
     out["related"] = _related_block(cat, "expedition", e.id)
+    out["provenance"] = get_provenance(db, "expedition", e)
     return out
 
 
@@ -337,6 +363,7 @@ def get_station(slug: str, db: Session = Depends(get_db), user: User | None = De
     out = station_out(s)
     out["topics"] = _topics(db, "station", s.id)
     out["related"] = _related_block(cat, "station", s.id)
+    out["provenance"] = get_provenance(db, "station", s)
     return out
 
 
@@ -359,6 +386,7 @@ def get_researcher(slug: str, db: Session = Depends(get_db), user: User | None =
     out = researcher_out(r)
     out["topics"] = _topics(db, "researcher", r.id)
     out["related"] = _related_block(cat, "researcher", r.id)
+    out["provenance"] = get_provenance(db, "researcher", r)
     return out
 
 
@@ -389,8 +417,31 @@ def map_layers(db: Session = Depends(get_db), user: User | None = Depends(get_cu
             datasets.append({"slug": ds.slug, "title": ds.title, "region": ds.region, "latitude": first.latitude,
                              "longitude": first.longitude, "url": f"/datasets/{ds.slug}", "data_type": ds.data_type,
                              "topics": (cat.card("dataset", ds.id) or {}).get("topics", [])})
-    return {"stations": stations, "expeditions": expeditions, "datasets": datasets,
-            "topics": sorted({t for c in cat.cards.values() for t in c["topics"]})}
+    media = []
+    for m in db.scalars(select(Media).where(Media.latitude.is_not(None))):
+        c = cat.card("media", m.id)
+        if c:
+            media.append({"slug": m.slug, "title": m.title, "media_type": m.media_type, "region": m.region,
+                          "latitude": m.latitude, "longitude": m.longitude, "url": c["url"], "topics": c["topics"],
+                          "verification": c["verification"], "verification_label": c["verification_label"]})
+    activities = []
+    for a in db.scalars(select(InstitutionalActivity).where(InstitutionalActivity.latitude.is_not(None))):
+        c = cat.card("activity", a.id)
+        if c:
+            activities.append({"slug": a.slug, "title": a.title, "kind": c["kind"], "region": a.region,
+                               "latitude": a.latitude, "longitude": a.longitude, "url": c["url"], "topics": c["topics"],
+                               "date": a.date.isoformat() if a.date else None, "status": a.status,
+                               "verification": c["verification"], "verification_label": c["verification_label"]})
+    for layer in (stations, expeditions, datasets):
+        for item in layer:
+            key = cat.by_slug.get((item.get("type") or "dataset", item["slug"]))
+            card = cat.cards.get(key) if key else None
+            item["verification"] = card["verification"] if card else "unverified"
+            item["verification_label"] = card["verification_label"] if card else "Unverified"
+            item["related_count"] = len(cat.links.get(key, ())) if key else 0
+    return {"stations": stations, "expeditions": expeditions, "datasets": datasets, "media": media,
+            "activities": activities, "topics": sorted({t for c in cat.cards.values() for t in c["topics"]
+                                                        if c["type"] != "topic"})}
 
 
 @router.get("/graph/{rtype}/{slug}")
@@ -406,7 +457,7 @@ def knowledge_graph(rtype: str, slug: str, db: Session = Depends(get_db), user: 
             nodes.setdefault((t, i), {**cat.cards[(t, i)], "depth": 1})
             edges.append({"source": f"{key[0]}:{key[1]}", "target": f"{t}:{i}", "relation": rel})
     for (t, i) in list(nodes):
-        if nodes[(t, i)]["depth"] != 1 or t not in {"expedition", "station"}:
+        if nodes[(t, i)]["depth"] != 1 or t not in {"expedition", "station", "activity"}:
             continue
         for t2, i2, rel in sorted(cat.links.get((t, i), set()))[:4]:
             if (t2, i2) in cat.cards and (t2, i2) not in nodes and len(nodes) < 28:
@@ -416,7 +467,7 @@ def knowledge_graph(rtype: str, slug: str, db: Session = Depends(get_db), user: 
         tslug = next((tp.slug for tp in cat.topics.values() if tp.name == tname), "")
         tid = f"topic:{tslug}"
         nodes[("topic", tslug)] = {"type": "topic", "id": tslug, "slug": tslug, "title": tname, "kind": "Topic",
-                                   "url": f"/explore?topic={tslug}", "depth": 1}
+                                   "url": f"/topics/{tslug}", "depth": 1}
         edges.append({"source": f"{key[0]}:{key[1]}", "target": tid, "relation": "about"})
     slim = [{"key": f"{k[0]}:{k[1]}", "type": v["type"], "title": v["title"], "kind": v["kind"], "url": v["url"],
              "depth": v["depth"]} for k, v in nodes.items()]
@@ -434,6 +485,6 @@ def public_stats(db: Session = Depends(get_db)):
         "documents": count(Document, Document.visibility == "public", Document.status != "archived"),
         "datasets": count(Dataset), "expeditions": count(Expedition), "stations": count(Station),
         "media": count(Media), "topics": count(Topic), "researchers": count(Researcher),
-        "dataset_records": count(DatasetRecord),
+        "dataset_records": count(DatasetRecord), "activities": count(InstitutionalActivity),
         "label": "Prototype demonstration repository — counts reflect the demo corpus, not institutional holdings.",
     }

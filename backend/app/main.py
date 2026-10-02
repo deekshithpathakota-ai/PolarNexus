@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import admin, ai, auth, ingestion, knowledge, misc, workflow
+from app.api import activities, admin, ai, auth, discovery, ingestion, knowledge, media_ingest, misc, workflow
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, detect_vector_backend, engine
 
@@ -103,7 +103,8 @@ def startup() -> None:
             log.warning("Could not create full-text index: %s", exc)
 
 
-for r in (auth.router, knowledge.router, misc.router, ai.router, workflow.router, ingestion.router, admin.router):
+for r in (auth.router, knowledge.router, misc.router, ai.router, workflow.router, ingestion.router, admin.router,
+          activities.router, media_ingest.router, discovery.router):
     app.include_router(r)
 
 

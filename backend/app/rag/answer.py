@@ -45,6 +45,7 @@ COMPOUND_RE = re.compile(
     r"(?P<list>(which|what)\s+(?P<noun>expeditions?|datasets?|stations?|researchers?|scientists?|activities|workshops?|events?|media|videos?|images?)\b.*)$",
     re.I)
 THEMES_RE = re.compile(r"\b(major|main|key)?\s*(research )?(themes|topics|areas)\b")
+EDITORIAL_RE = re.compile(r"^(simplified for|see the|read more|for more detail|this (explainer|summary|page) (is|was))", re.I)
 REGION_WORDS = {"antarctic": "Antarctic", "antarctica": "Antarctic", "arctic": "Arctic", "southern ocean": "Southern Ocean",
                 "himalaya": "Himalaya", "himalayan": "Himalaya"}
 TYPE_WORDS = {"expedition": "expedition", "dataset": "dataset", "station": "station", "media": "media", "video": "media",
@@ -136,6 +137,8 @@ def _pick_sentences(question: str, evidence: list[Evidence], intent: str | None,
                 continue
             if intent != "figure" and re.match(r"^Figure \d", s):
                 continue
+            if EDITORIAL_RE.match(s):
+                continue  # editorial notes ("Simplified for learners; see …") are not answers
             sst = stems(s)
             overlap = len(qst & sst) / max(1, len(qst)) if qst else 0
             score = overlap + 0.25 / e.n + (0.15 if pos == 0 else 0)

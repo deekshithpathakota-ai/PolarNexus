@@ -63,10 +63,16 @@ class SemanticSearchRequest(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    format: Literal["website", "linkedin", "instagram", "student", "public", "media"]
-    resource_type: Literal["document", "dataset", "topic", "chunks"] = "document"
+    format: Literal["website", "linkedin", "instagram", "student", "public", "media",
+                    "summary", "newsletter", "expedition_update", "highlight"]
+    resource_type: Literal["document", "dataset", "topic", "chunks", "expedition", "station", "researcher", "activity"] = "document"
     resource_slug: str | None = Field(default=None, max_length=160)
     chunk_ids: list[int] | None = Field(default=None, max_length=12)
+    audience: Literal["researchers", "students", "teachers", "general_public", "media", "policy"] | None = None
+
+
+class TranslateRequest(BaseModel):
+    language: Literal["Hindi", "Telugu"]
 
 
 class ContentUpdate(BaseModel):

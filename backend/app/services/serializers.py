@@ -4,11 +4,40 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from app.auth.security import ROLE_INFO, permissions_for
-from app.models import Dataset, Document, Expedition, GeneratedContent, Media, Researcher, Station, User
+from app.models import (
+    Dataset,
+    Document,
+    Expedition,
+    GeneratedContent,
+    InstitutionalActivity,
+    Media,
+    Researcher,
+    Station,
+    User,
+)
+from app.services.catalog import ACTIVITY_TYPES
+from app.services.provenance import content_provenance, provenance_out
+
+# Channels: the website feed is a real, live dissemination channel of this deployment. Social/newsletter
+# channels have connector code paths but no live API credentials — publishing to them is a labelled simulation.
+CHANNELS = {
+    "website": {"label": "Website (Outreach Feed)", "status": "live", "note": "Published to this deployment's public Outreach Feed."},
+    "linkedin": {"label": "LinkedIn", "status": "connector_ready", "note": "Prototype simulation — no LinkedIn API credentials configured."},
+    "instagram": {"label": "Instagram", "status": "connector_ready", "note": "Prototype simulation — no Instagram API credentials configured."},
+    "newsletter": {"label": "Newsletter", "status": "connector_ready", "note": "Prototype simulation — no mailing service configured."},
+}
 
 
 def iso(v: datetime | date | None) -> str | None:
     return v.isoformat() if v else None
+
+
+_PREFIX = {"document": "/resources", "dataset": "/datasets", "media": "/media", "expedition": "/expeditions",
+           "station": "/stations", "researcher": "/researchers", "activity": "/activities"}
+
+
+def _cite_url(rtype: str, slug: str) -> str | None:
+    return f"{_PREFIX[rtype]}/{slug}" if rtype in _PREFIX and slug else None
 
 
 def user_out(u: User) -> dict:
@@ -50,7 +79,35 @@ def media_out(m: Media) -> dict:
         "media_type": m.media_type, "category": m.category, "region": m.region, "year": m.year, "credit": m.credit,
         "license": m.license, "tags": m.tags, "scene": m.scene, "duration": m.duration, "is_demo": m.is_demo,
         "views": m.views, "url": f"/media/{m.slug}",
+        # ingestion metadata (v2)
+        "status": m.status or "indexed", "filename": m.filename or "", "mime_type": m.mime_type or "",
+        "size_bytes": m.size_bytes or 0, "duration_seconds": m.duration_seconds, "width": m.width, "height": m.height,
+        "captured_at": iso(m.captured_at), "uploaded_at": iso(m.created_at), "location": m.location or "",
+        "latitude": m.latitude, "longitude": m.longitude, "exif": m.exif or {},
+        "has_file": bool(m.file_path), "file_url": f"/api/media/{m.slug}/file" if m.file_path else None,
+        "thumbnail_url": f"/api/media/{m.slug}/thumbnail" if m.thumbnail_path else None,
+        "transcript": m.transcript or "", "transcript_source": m.transcript_source or "",
+        "processing_status": m.processing_status or "ready", "processing_steps": m.processing_steps or [],
+        "processing_error": m.processing_error or "", "uploaded_by": m.uploaded_by,
     }
+
+
+def activity_out(a: InstitutionalActivity) -> dict:
+    return {
+        "type": "activity", "id": a.id, "slug": a.slug, "title": a.title, "description": a.description,
+        "activity_type": a.activity_type, "activity_type_label": ACTIVITY_TYPES.get(a.activity_type, a.activity_type),
+        "date": iso(a.date), "end_date": iso(a.end_date), "year": a.year, "location": a.location,
+        "latitude": a.latitude, "longitude": a.longitude, "region": a.region, "organisation": a.organisation,
+        "department": a.department, "audience": a.audience, "outcomes": a.outcomes or [], "status": a.status,
+        "visibility": a.visibility, "featured": a.featured, "cover_scene": a.cover_scene, "cover_media_id": a.cover_media_id,
+        "is_demo": a.is_demo, "views": a.views, "created_at": iso(a.created_at), "updated_at": iso(a.updated_at),
+        "url": f"/activities/{a.slug}",
+    }
+
+
+def channel_status(channels: list[str]) -> list[dict]:
+    return [{"channel": ch, **CHANNELS.get(ch, {"label": ch, "status": "connector_ready", "note": "Prototype simulation"})}
+            for ch in channels]
 
 
 def expedition_out(e: Expedition) -> dict:
@@ -93,17 +150,18 @@ def content_out(c: GeneratedContent, users: dict[int, User] | None = None, full:
         "created_at": iso(c.created_at), "updated_at": iso(c.updated_at), "submitted_at": iso(c.submitted_at),
         "approved_at": iso(c.approved_at), "published_at": iso(c.published_at),
         "evidence_overall": (c.evidence_check or {}).get("overall"),
-        "excerpt": c.body[:220],
+        "excerpt": c.body[:220], "audience": c.audience or "", "language": c.language or "English",
+        "translated_from": c.translated_from, "channel_status": channel_status(c.channels or []),
     }
     if full:
         out["body"] = c.body
         out["evidence_check"] = c.evidence_check
         out["citations"] = [{"n": x.position, "chunk_id": x.chunk_id, "resource_type": x.resource_type,
                              "resource_id": x.resource_id, "slug": x.resource_slug, "label": x.label,
-                             "section": x.section, "quote": x.quote,
-                             "url": f"/resources/{x.resource_slug}" if x.resource_type == "document" and x.resource_slug
-                             else (f"/datasets/{x.resource_slug}" if x.resource_type == "dataset" else None)}
+                             "section": x.section, "page": x.page, "quote": x.quote,
+                             "url": _cite_url(x.resource_type, x.resource_slug)}
                             for x in c.citations]
         out["history"] = [{"action": r.action, "comment": r.comment, "by": r.reviewer_name, "at": iso(r.created_at)}
                           for r in c.reviews]
+        out["provenance"] = provenance_out(content_provenance(c, users[c.reviewer_id].name if c.reviewer_id in users else None))
     return out

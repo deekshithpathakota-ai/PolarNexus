@@ -20,7 +20,9 @@ from app.models import (
     DocumentChunk,
     Expedition,
     GeneratedContent,
+    InstitutionalActivity,
     Media,
+    Provenance,
     ResourceLink,
     ResourceTopic,
     Role,
@@ -36,12 +38,13 @@ from app.services.serializers import iso, user_out
 from app.utils.text import slugify
 
 router = APIRouter(prefix="/api", tags=["admin"])
-EDITABLE = {"document": Document, "dataset": Dataset, "media": Media, "expedition": Expedition, "station": Station}
+EDITABLE = {"document": Document, "dataset": Dataset, "media": Media, "expedition": Expedition, "station": Station,
+            "activity": InstitutionalActivity}
 
 
 # ------------------------------------------------------------------ repository
 @router.get("/admin/repository")
-def repository(kind: str = Query("document", pattern="^(document|dataset|media|expedition|station)$"),
+def repository(kind: str = Query("document", pattern="^(document|dataset|media|expedition|station|activity)$"),
                q: str | None = None, status: str | None = None, page: int = Query(1, ge=1),
                page_size: int = Query(20, le=100), db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
@@ -65,7 +68,8 @@ def repository(kind: str = Query("document", pattern="^(document|dataset|media|e
             "id": r.id, "slug": r.slug, "title": getattr(r, "title", None) or r.name, "region": r.region,
             "year": getattr(r, "year", None), "status": getattr(r, "status", "indexed"),
             "visibility": getattr(r, "visibility", "public"), "kind": getattr(r, "doc_type", None) or getattr(r, "media_type", None)
-            or getattr(r, "data_type", None) or getattr(r, "program", None) or getattr(r, "kind", kind),
+            or getattr(r, "activity_type", None) or getattr(r, "data_type", None) or getattr(r, "program", None)
+            or getattr(r, "kind", kind), "processing_status": getattr(r, "processing_status", None),
             "is_demo": getattr(r, "is_demo", not getattr(r, "verified", True)), "views": getattr(r, "views", 0),
             "chunks": chunk_counts.get(r.id, 0), "updated_at": iso(r.updated_at),
             "abstract": getattr(r, "abstract", None) or getattr(r, "description", None) or getattr(r, "objective", ""),
@@ -134,7 +138,8 @@ def update_metadata(kind: str, rid: int, body: MetadataUpdate, db: Session = Dep
         index_document(db, obj)
     elif kind != "document" and ({"description", "title"} & set(changes)):
         index_resource(db, kind, rid)
-    audit(db, user, "metadata_edit", kind, getattr(obj, "slug", rid), "Changed: " + ", ".join(changes))
+    audit(db, user, "visibility_change" if changes == ["visibility"] else "metadata_edit", kind,
+          getattr(obj, "slug", rid), "Changed: " + ", ".join(changes))
     return {"ok": True, "changed": changes}
 
 
@@ -158,10 +163,21 @@ def delete_resource(kind: str, rid: int, hard: bool = False, db: Session = Depen
                                           ((ResourceLink.target_type == kind) & (ResourceLink.target_id == rid))))
     db.execute(delete(ResourceTopic).where(ResourceTopic.resource_type == kind, ResourceTopic.resource_id == rid))
     db.execute(delete(DocumentChunk).where(DocumentChunk.resource_type == kind, DocumentChunk.resource_id == rid))
+    db.execute(delete(Provenance).where(Provenance.resource_type == kind, Provenance.resource_id == rid))
+    files = [getattr(obj, "file_path", ""), getattr(obj, "thumbnail_path", "")] if kind == "media" and not obj.is_demo else []
     db.delete(obj)
     db.commit()
     from app.rag.vector_store import invalidate_caches
     invalidate_caches()
+    from pathlib import Path
+    root = Path(settings.STORAGE_DIR).resolve()
+    for f in files:
+        try:
+            fp = Path(f).resolve()
+            if f and fp.is_file() and fp.is_relative_to(root):
+                fp.unlink()
+        except OSError:
+            pass
     audit(db, user, "delete", kind, slug, "Permanently deleted")
     return {"ok": True, "deleted": True}
 
@@ -172,7 +188,7 @@ def restore(kind: str, rid: int, db: Session = Depends(get_db), user: User = Dep
     obj = db.get(model, rid) if model else None
     if not obj or not hasattr(obj, "status"):
         raise HTTPException(404, "Resource not found.")
-    obj.status = "indexed"
+    obj.status = "completed" if kind == "activity" else "indexed"
     db.commit()
     if kind == "document":
         index_document(db, obj)
@@ -329,6 +345,7 @@ def analytics(days: int = Query(60, ge=7, le=365), db: Session = Depends(get_db)
         "Media": db.scalar(select(func.count()).select_from(Media)),
         "Expeditions": db.scalar(select(func.count()).select_from(Expedition)),
         "Stations": db.scalar(select(func.count()).select_from(Station)),
+        "Activities": db.scalar(select(func.count()).select_from(InstitutionalActivity)),
     }
     doc_types = Counter(t for (t,) in db.execute(select(Document.doc_type)))
     topic_counts = db.execute(select(Topic.name, func.count()).join(ResourceTopic, ResourceTopic.topic_id == Topic.id)

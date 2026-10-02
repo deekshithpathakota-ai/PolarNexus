@@ -28,7 +28,7 @@ def search(params: dict = Depends(_common), db: Session = Depends(get_db), user:
     res = _list(db, user, None, **params)
     if params["q"]:
         db.add(SearchLog(user_id=user.id if user else None, query=params["q"][:500], mode=params["mode"],
-                         filters=res["filters"], result_count=res["total"]))
+                         filters=res["filters"], result_count=res["total"], duration_ms=res["took_ms"]))
         track(db, "search", meta={"query": params["q"][:200]}, user=user, commit=False)
         db.commit()
     return res

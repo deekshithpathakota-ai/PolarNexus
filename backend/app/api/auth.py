@@ -1,6 +1,8 @@
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -28,12 +30,32 @@ def _issue(db: Session, user: User, how: str) -> dict:
     return {"access_token": create_access_token(user), "token_type": "bearer", "user": user_out(user)}
 
 
+_failures: dict[tuple[str, str], deque] = defaultdict(deque)
+
+
+def _throttled(key: tuple[str, str]) -> bool:
+    window = settings.LOGIN_WINDOW_SECONDS
+    q = _failures[key]
+    now = time.monotonic()
+    while q and now - q[0] > window:
+        q.popleft()
+    return len(q) >= settings.LOGIN_MAX_FAILURES
+
+
 @router.post("/login", response_model=TokenOut)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.email == body.email.lower().strip()))
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    email = body.email.lower().strip()
+    key = (request.client.host if request.client else "-", email)
+    if _throttled(key):
+        audit(db, None, "login", "user", email[:64], "Throttled after repeated failures", status="failure")
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
+                            "Too many failed sign-in attempts. Please wait a few minutes and try again.")
+    user = db.scalar(select(User).where(User.email == email))
     if not user or not verify_password(body.password, user.password_hash):
-        audit(db, user, "login", "user", body.email[:64], "Invalid credentials", status="failure")
+        _failures[key].append(time.monotonic())
+        audit(db, user, "login", "user", email[:64], "Invalid credentials", status="failure")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect email or password.")
+    _failures.pop(key, None)
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been disabled by an administrator.")
     return _issue(db, user, "password")
