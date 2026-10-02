@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -29,6 +29,7 @@ class SearchLog(Base):
     mode: Mapped[str] = mapped_column(String(16), default="hybrid")
     filters: Mapped[dict] = mapped_column(JSON, default=dict)
     result_count: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)  # measured server time (live queries only)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
@@ -56,4 +57,5 @@ class AIQuery(Base):
     answer: Mapped[str] = mapped_column(Text, default="")
     sources: Mapped[list] = mapped_column(JSON, default=list)
     feedback: Mapped[str] = mapped_column(String(16), default="")
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

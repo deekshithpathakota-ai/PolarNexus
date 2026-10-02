@@ -156,6 +156,84 @@ class Media(TimestampMixin, Base):
     visibility: Mapped[str] = mapped_column(String(16), default="public")
     is_demo: Mapped[bool] = mapped_column(Boolean, default=True)
     views: Mapped[int] = mapped_column(Integer, default=0)
+    # ---- ingestion fields (added in v2; all nullable/defaulted so existing rows stay valid)
+    status: Mapped[str] = mapped_column(String(24), default="indexed", server_default="indexed")  # indexed|archived
+    filename: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    mime_type: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thumbnail_path: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    captured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    location: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exif: Mapped[dict] = mapped_column(JSON, default=dict, nullable=True)
+    transcript: Mapped[str] = mapped_column(Text, default="", server_default="")
+    transcript_source: Mapped[str] = mapped_column(String(48), default="", server_default="")  # stt|uploaded|""
+    processing_status: Mapped[str] = mapped_column(String(32), default="ready", server_default="ready", index=True)
+    processing_steps: Mapped[list] = mapped_column(JSON, default=list, nullable=True)
+    processing_error: Mapped[str] = mapped_column(Text, default="", server_default="")
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class InstitutionalActivity(TimestampMixin, Base):
+    """Workshops, seminars, outreach events, announcements, achievements… (SIH26063 institutional activities)."""
+
+    __tablename__ = "institutional_activities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    slug: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, default="")
+    activity_type: Mapped[str] = mapped_column(String(48), index=True)
+    date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    location: Mapped[str] = mapped_column(String(255), default="")
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    region: Mapped[str] = mapped_column(String(48), default="India", index=True)
+    organisation: Mapped[str] = mapped_column(String(255), default="", index=True)
+    department: Mapped[str] = mapped_column(String(255), default="")
+    audience: Mapped[str] = mapped_column(String(120), default="")
+    outcomes: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(24), default="completed", index=True)  # upcoming|ongoing|completed|cancelled|archived
+    visibility: Mapped[str] = mapped_column(String(16), default="public", index=True)
+    featured: Mapped[bool] = mapped_column(Boolean, default=False)
+    cover_scene: Mapped[str] = mapped_column(String(32), default="station")  # prototype artwork variant
+    cover_media_id: Mapped[int | None] = mapped_column(ForeignKey("media.id", ondelete="SET NULL"), nullable=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=True)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class Provenance(Base):
+    """Where a knowledge object came from and how far it has been verified. One row per resource;
+    kept in its own table so every resource type (and outreach content) shares one model."""
+
+    __tablename__ = "provenance"
+    __table_args__ = (UniqueConstraint("resource_type", "resource_id", name="uq_provenance_resource"),
+                      Index("ix_provenance_status", "verification_status"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    resource_type: Mapped[str] = mapped_column(String(24))
+    resource_id: Mapped[int] = mapped_column(Integer)
+    source_organisation: Mapped[str] = mapped_column(String(255), default="")
+    source_type: Mapped[str] = mapped_column(String(64), default="")
+    source_url: Mapped[str] = mapped_column(String(500), default="")
+    original_identifier: Mapped[str] = mapped_column(String(255), default="")
+    license: Mapped[str] = mapped_column(String(255), default="")
+    publication_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    collection_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    imported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(24), default="unverified")
+    verified_by: Mapped[str] = mapped_column(String(255), default="")
+    data_quality: Mapped[str] = mapped_column(String(120), default="")
+    provenance_notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
 class Expedition(TimestampMixin, Base):

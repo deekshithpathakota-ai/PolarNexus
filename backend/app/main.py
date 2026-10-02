@@ -33,7 +33,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://[a-z0-9-]+\.vercel\.app" if settings.CORS_ALLOW_VERCEL_PREVIEWS else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,14 +72,28 @@ async def unhandled(_: Request, exc: Exception):
 
 
 def startup() -> None:
+    if settings.is_production and settings.JWT_SECRET in {"dev-only-change-me", "", "change-me-local-only"}:
+        raise RuntimeError("JWT_SECRET must be set to a strong random value when ENVIRONMENT=production.")
     detect_vector_backend()
     Base.metadata.create_all(engine)
+    from app.core.migrations import migrate
+
+    log.info("schema: %s", migrate(engine))
+    seeded = None
     if settings.DEMO_MODE:
         from app.seed.seed_demo_data import run
 
-        result = run(if_empty=True)
-        if result:
-            log.info("Empty database detected — demo data seeded: %s", result)
+        seeded = run(if_empty=True)
+        if seeded:
+            log.info("Empty database detected — demo data seeded: %s", seeded)
+    if not seeded:
+        from app.seed.extensions import upgrade_existing
+
+        with SessionLocal() as db:
+            try:
+                upgrade_existing(db)
+            except Exception as exc:  # never block start-up on an optional data upgrade
+                log.warning("v2 data upgrade skipped: %s", exc)
     with SessionLocal() as db:
         from app.rag.indexer import ensure_fulltext_index
 
@@ -87,8 +101,6 @@ def startup() -> None:
             ensure_fulltext_index(db)
         except Exception as exc:  # non-fatal
             log.warning("Could not create full-text index: %s", exc)
-    if settings.JWT_SECRET == "dev-only-change-me" and settings.ENVIRONMENT == "production":
-        log.warning("JWT_SECRET is using the development default — set a strong secret in production!")
 
 
 for r in (auth.router, knowledge.router, misc.router, ai.router, workflow.router, ingestion.router, admin.router):

@@ -11,6 +11,8 @@ from app.models import (
     Dataset,
     Document,
     Expedition,
+    GeneratedContent,
+    InstitutionalActivity,
     Media,
     Researcher,
     ResourceLink,
@@ -19,6 +21,7 @@ from app.models import (
     Topic,
     User,
 )
+from app.services import provenance as prov
 from app.utils.text import truncate_words
 
 URL_PREFIX = {
@@ -28,8 +31,22 @@ URL_PREFIX = {
     "expedition": "/expeditions",
     "station": "/stations",
     "researcher": "/researchers",
-    "topic": "/explore?topic=",
+    "topic": "/topics",
+    "activity": "/activities",
+    "content": "/outreach",
 }
+
+ACTIVITY_TYPES = {
+    "workshop": "Workshop", "seminar": "Seminar", "conference": "Conference", "exhibition": "Exhibition",
+    "school_outreach": "School Outreach", "public_lecture": "Public Lecture", "awareness_campaign": "Awareness Campaign",
+    "expedition_briefing": "Expedition Briefing", "institutional_announcement": "Institutional Announcement",
+    "research_announcement": "Research Announcement", "training_programme": "Training Programme",
+    "official_event": "Official Event", "achievement": "Achievement",
+}
+
+# Resource types whose passages are indexed for discovery but never used as evidence for AI answers
+# (taxonomy entries, event listings and AI-generated outreach must not ground scientific claims).
+NON_EVIDENCE_TYPES = {"researcher", "media", "topic", "activity", "content"}
 
 PROFESSIONAL_ROLES = {"researcher", "editor", "admin"}
 
@@ -52,6 +69,12 @@ def kind_label(rtype: str, obj) -> str:
         return "Research Station"
     if rtype == "researcher":
         return "Researcher"
+    if rtype == "activity":
+        return ACTIVITY_TYPES.get(obj.activity_type, "Institutional Activity")
+    if rtype == "topic":
+        return "Topic"
+    if rtype == "content":
+        return "Outreach Content"
     return rtype.title()
 
 
@@ -79,6 +102,8 @@ class Catalog:
 def build_catalog(db: Session, user: User | None = None) -> Catalog:
     cat = Catalog()
     pro = bool(user and user.role_name in PROFESSIONAL_ROLES)
+    is_admin = bool(user and user.role_name == "admin")
+    pmap = prov.provenance_map(db)
     cat.topics = {t.id: t for t in db.scalars(select(Topic))}
     topic_map: dict[tuple[str, int], list[Topic]] = defaultdict(list)
     for rt in db.scalars(select(ResourceTopic)):
@@ -86,37 +111,53 @@ def build_catalog(db: Session, user: User | None = None) -> Catalog:
             topic_map[(rt.resource_type, rt.resource_id)].append(cat.topics[rt.topic_id])
 
     def add(rtype: str, obj, summary: str, region: str, year: int | None, source: str, extra: dict,
-            visibility: str = "public", status: str = "indexed", language: str = "English"):
+            visibility: str = "public", status: str = "indexed", language: str = "English",
+            organisation: str = "", provenance: dict | None = None):
         if visibility != "public" and not pro:
             return
-        if status == "archived" and not (user and user.role_name == "admin"):
+        if status == "archived" and not is_admin:
             return
         tps = topic_map.get((rtype, obj.id), [])
-        title = obj.name if rtype in {"researcher", "station", "expedition"} else obj.title
+        title = obj.name if rtype in {"researcher", "station", "expedition", "topic"} else obj.title
+        if provenance is not None:
+            p = provenance
+        elif (rtype, obj.id) in pmap:
+            p = prov.as_dict(pmap[(rtype, obj.id)])
+        else:
+            p = prov.default_provenance(rtype, obj)
+        vstatus = p["verification_status"] if p["verification_status"] in prov.VERIFICATION else "unverified"
         card = {
-            "type": rtype, "id": obj.id, "slug": obj.slug, "title": title,
+            "type": rtype, "id": obj.id, "slug": str(obj.slug), "title": title,
             "kind": kind_label(rtype, obj), "summary": truncate_words(summary, 38),
             "region": region, "year": year, "source": source,
             "topics": [t.name for t in tps], "topic_slugs": [t.slug for t in tps],
             "views": getattr(obj, "views", 0) or 0, "is_demo": bool(getattr(obj, "is_demo", False)),
-            "url": resource_url(rtype, obj.slug), "language": language, "visibility": visibility,
-            "status": status, "extra": extra,
+            "url": resource_url(rtype, str(obj.slug)), "language": language, "visibility": visibility,
+            "status": status, "extra": extra, "organisation": organisation or p.get("source_organisation", ""),
+            "verification": vstatus, "verification_label": prov.VERIFICATION[vstatus][0],
+            "official": p.get("source_type") == prov.OFFICIAL_SOURCE_TYPE and vstatus == "verified",
         }
         cat.cards[(rtype, obj.id)] = card
-        cat.by_slug[(rtype, obj.slug)] = (rtype, obj.id)
+        cat.by_slug[(rtype, str(obj.slug))] = (rtype, obj.id)
 
     for d in db.scalars(select(Document)):
         add("document", d, d.abstract, d.region, d.year, d.source,
             {"authors": d.authors, "institution": d.institution, "keywords": d.keywords},
-            d.visibility, d.status, d.language)
+            d.visibility, d.status, d.language, organisation=d.institution)
     for ds in db.scalars(select(Dataset)):
         add("dataset", ds, ds.description, ds.region, ds.year, ds.source,
             {"format": ds.format, "data_type": ds.data_type, "records": ds.record_count,
              "variables": [v["name"] for v in ds.variables]}, ds.visibility, ds.status)
     for m in db.scalars(select(Media)):
+        ready = (m.processing_status or "ready") == "ready"
+        if not ready and not is_admin:
+            continue  # still processing (or failed) — not discoverable yet
         add("media", m, m.description, m.region, m.year, m.credit,
-            {"media_type": m.media_type, "scene": m.scene, "category": m.category, "duration": m.duration},
-            m.visibility)
+            {"media_type": m.media_type, "scene": m.scene, "category": m.category, "duration": m.duration,
+             "thumbnail": f"/api/media/{m.slug}/thumbnail" if m.thumbnail_path else None,
+             "has_file": bool(m.file_path), "processing_status": m.processing_status or "ready",
+             "has_transcript": bool(m.transcript)},
+            m.visibility, m.status or "indexed", organisation=m.credit)
     for e in db.scalars(select(Expedition)):
         add("expedition", e, e.objective, e.region, e.year, "Expedition record",
             {"season": e.season, "program": e.program, "number": e.number})
@@ -126,13 +167,50 @@ def build_catalog(db: Session, user: User | None = None) -> Catalog:
              "status": s.status, "verified": s.verified})
     for r in db.scalars(select(Researcher)):
         add("researcher", r, r.bio, "", None, r.institution,
-            {"institution": r.institution, "expertise": r.expertise, "title": r.title})
+            {"institution": r.institution, "expertise": r.expertise, "title": r.title}, organisation=r.institution)
+    for a in db.scalars(select(InstitutionalActivity)):
+        add("activity", a, a.description, a.region, a.year or (a.date.year if a.date else None), a.organisation,
+            {"activity_type": a.activity_type, "date": a.date.isoformat() if a.date else None,
+             "end_date": a.end_date.isoformat() if a.end_date else None, "location": a.location,
+             "status": a.status, "featured": a.featured, "scene": None, "cover_scene": a.cover_scene},
+            a.visibility, "archived" if a.status == "archived" else "indexed", organisation=a.organisation)
+    topic_counts: dict[int, int] = defaultdict(int)
+    for (_rt, _rid), tps in topic_map.items():
+        for t in tps:
+            topic_counts[t.id] += 1
+    for t in cat.topics.values():
+        add("topic", t, t.description, "", None, "PolarNexus topic taxonomy",
+            {"category": t.category, "count": topic_counts.get(t.id, 0)},
+            provenance={**prov.default_provenance("topic", t), "source_type": "Platform taxonomy",
+                        "source_organisation": "PolarNexus", "verification_status": "verified"})
 
     for link in db.scalars(select(ResourceLink)):
         a, b = (link.source_type, link.source_id), (link.target_type, link.target_id)
         if a in cat.cards and b in cat.cards:
             cat.links[a].add((b[0], b[1], link.relation))
             cat.links[b].add((a[0], a[1], link.relation))
+
+    # Published outreach content joins the catalogue last so it can inherit topics from its source research.
+    for c in db.scalars(select(GeneratedContent).where(GeneratedContent.status == "published")):
+        src = (c.resource_type, c.resource_id) if c.resource_id else None
+        src_card = cat.cards.get(src) if src else None
+        p = prov.content_provenance(c)
+        body = " ".join(line.strip("#*- ") for line in c.body.splitlines() if line.strip())
+        cat.cards[("content", c.id)] = {
+            "type": "content", "id": c.id, "slug": str(c.id), "title": c.title, "kind": "Outreach Content",
+            "summary": truncate_words(body, 38), "region": (src_card or {}).get("region", ""),
+            "year": c.published_at.year if c.published_at else None, "source": "PolarNexus Outreach",
+            "topics": (src_card or {}).get("topics", []), "topic_slugs": (src_card or {}).get("topic_slugs", []),
+            "views": 0, "is_demo": c.is_demo, "url": f"/outreach/{c.id}", "language": c.language or "English",
+            "visibility": "public", "status": "indexed", "organisation": p["source_organisation"],
+            "extra": {"format": c.format, "audience": c.audience, "channels": c.channels},
+            "verification": p["verification_status"], "verification_label": prov.VERIFICATION[p["verification_status"]][0],
+            "official": False,
+        }
+        cat.by_slug[("content", str(c.id))] = ("content", c.id)
+        if src_card:
+            cat.links[("content", c.id)].add((src[0], src[1], "derived_from"))
+            cat.links[src].add(("content", c.id, "derived_from"))
     return cat
 
 
@@ -150,6 +228,9 @@ TYPE_FILTER_MAP = {
     "Expedition": lambda c: c["type"] == "expedition",
     "Research Station": lambda c: c["type"] == "station",
     "Researcher": lambda c: c["type"] == "researcher",
+    "Institutional Activity": lambda c: c["type"] == "activity",
+    "Topic": lambda c: c["type"] == "topic",
+    "Outreach Content": lambda c: c["type"] == "content",
 }
 
 
@@ -165,10 +246,14 @@ class Filters:
     researcher: str | None = None
     language: str | None = None
     data_type: str | None = None
+    verification: list[str] = field(default_factory=list)
+    organisation: str | None = None
+    activity_type: str | None = None
 
     def active(self) -> bool:
         return bool(self.regions or self.types or self.topics or self.year_from or self.year_to or self.station
-                    or self.expedition or self.researcher or self.language or self.data_type)
+                    or self.expedition or self.researcher or self.language or self.data_type or self.verification
+                    or self.organisation or self.activity_type)
 
     def as_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v}
@@ -200,6 +285,16 @@ def apply_filters(cat: Catalog, cards: list[dict], f: Filters) -> list[dict]:
         if f.language and c["language"] != f.language:
             continue
         if f.data_type and c["extra"].get("data_type") != f.data_type:
+            continue
+        if f.verification and c["type"] == "topic":
+            continue  # taxonomy entries carry no provenance
+        if f.verification and not any(prov.FILTERS.get(v, lambda _p: False)(
+                {"verification_status": c.get("verification", "unverified"),
+                 "source_type": prov.OFFICIAL_SOURCE_TYPE if c.get("official") else ""}) for v in f.verification):
+            continue
+        if f.organisation and f.organisation.lower() not in (c.get("organisation") or "").lower():
+            continue
+        if f.activity_type and c["extra"].get("activity_type") != f.activity_type:
             continue
         if not (linked_to(c, "station", f.station) and linked_to(c, "expedition", f.expedition)
                 and linked_to(c, "researcher", f.researcher)):

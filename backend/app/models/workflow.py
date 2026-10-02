@@ -25,6 +25,9 @@ class GeneratedContent(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     channels: Mapped[list] = mapped_column(JSON, default=list)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
+    audience: Mapped[str] = mapped_column(String(32), default="", server_default="")
+    language: Mapped[str] = mapped_column(String(32), default="English", server_default="English")
+    translated_from: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -51,6 +54,7 @@ class Citation(Base):
     resource_slug: Mapped[str] = mapped_column(String(160), default="")
     label: Mapped[str] = mapped_column(String(300))
     section: Mapped[str] = mapped_column(String(128), default="")
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     quote: Mapped[str] = mapped_column(Text, default="")
 
     content: Mapped[GeneratedContent] = relationship(back_populates="citations")

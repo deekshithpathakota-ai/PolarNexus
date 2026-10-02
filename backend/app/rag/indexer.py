@@ -9,7 +9,18 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import VectorState
-from app.models import Dataset, Document, DocumentChunk, Expedition, Media, Researcher, Station
+from app.models import (
+    Dataset,
+    Document,
+    DocumentChunk,
+    Expedition,
+    GeneratedContent,
+    InstitutionalActivity,
+    Media,
+    Researcher,
+    Station,
+    Topic,
+)
 from app.rag import embeddings as emb
 from app.rag.vector_store import invalidate_caches
 from app.utils.text import split_sentences
@@ -68,28 +79,72 @@ def split_document(content: str) -> list[tuple[str, int, str]]:
     return out
 
 
-def resource_passages(db: Session) -> list[DocumentChunk]:
-    """Builds unembedded chunks for every resource in the repository."""
+def _rows(db: Session, model, only: tuple[str, int] | None, rtype: str, *where):
+    if only and only[0] != rtype:
+        return []
+    stmt = select(model)
+    for w in where:
+        stmt = stmt.where(w)
+    if only:
+        stmt = stmt.where(model.id == only[1])
+    return db.scalars(stmt)
+
+
+def media_passages(m: Media) -> list[DocumentChunk]:
+    exif_bits = []
+    if m.captured_at:
+        exif_bits.append(f"Captured {m.captured_at.date().isoformat()}")
+    if m.location:
+        exif_bits.append(f"Location: {m.location}")
+    if m.duration_seconds:
+        exif_bits.append(f"Duration {int(m.duration_seconds // 60)} min {int(m.duration_seconds % 60)} s")
+    head = (f"{m.title}. {m.description} Tags: {', '.join(m.tags or [])}. Category: {m.category}. Region: {m.region}."
+            + (" " + ". ".join(exif_bits) + "." if exif_bits else ""))
+    out = [DocumentChunk(resource_type="media", resource_id=m.id, section="Media description", text=head)]
+    if m.transcript:
+        for i, passage in enumerate(_pack_sentences(re.sub(r"\s+", " ", m.transcript))):
+            out.append(DocumentChunk(resource_type="media", resource_id=m.id, chunk_index=i + 1,
+                                     section="Video transcript", text=passage))
+    return out
+
+
+def resource_passages(db: Session, only: tuple[str, int] | None = None) -> list[DocumentChunk]:
+    """Builds unembedded chunks for every resource in the repository (or just `only=(type, id)`)."""
     chunks: list[DocumentChunk] = []
-    for doc in db.scalars(select(Document).where(Document.status != "archived")):
+    for doc in _rows(db, Document, only, "document", Document.status != "archived"):
         chunks.extend(document_chunks(doc))
-    for ds in db.scalars(select(Dataset)):
+    for ds in _rows(db, Dataset, only, "dataset"):
         vars_ = ", ".join(f"{v['name']} ({v.get('unit', '')})" for v in ds.variables)
         chunks.append(DocumentChunk(resource_type="dataset", resource_id=ds.id, section="Dataset description", text=(
             f"{ds.title}. {ds.description} Variables: {vars_}. Region: {ds.region}. Coverage: {ds.spatial_coverage}.")))
-    for m in db.scalars(select(Media)):
-        chunks.append(DocumentChunk(resource_type="media", resource_id=m.id, section="Media description", text=(
-            f"{m.title}. {m.description} Tags: {', '.join(m.tags)}. Region: {m.region}.")))
-    for e in db.scalars(select(Expedition)):
+    for m in _rows(db, Media, only, "media"):
+        if (m.status or "indexed") == "archived" or (m.processing_status or "ready") not in {"ready", "indexing"}:
+            continue
+        chunks.extend(media_passages(m))
+    for e in _rows(db, Expedition, only, "expedition"):
         chunks.append(DocumentChunk(resource_type="expedition", resource_id=e.id, section="Expedition overview", text=(
             f"{e.name} ({e.season}). {e.objective} Research themes: {', '.join(e.themes)}. "
             f"Highlights: {' '.join(e.highlights)}")))
-    for s in db.scalars(select(Station)):
+    for s in _rows(db, Station, only, "station"):
         chunks.append(DocumentChunk(resource_type="station", resource_id=s.id, section="Station overview", text=(
             f"{s.name} — {s.kind}, {s.location_name}. {s.description} Research themes: {', '.join(s.themes)}.")))
-    for r in db.scalars(select(Researcher)):
+    for r in _rows(db, Researcher, only, "researcher"):
         chunks.append(DocumentChunk(resource_type="researcher", resource_id=r.id, section="Researcher profile", text=(
             f"{r.name}, {r.title}, {r.institution}. Expertise: {', '.join(r.expertise)}. {r.bio}")))
+    for a in _rows(db, InstitutionalActivity, only, "activity", InstitutionalActivity.status != "archived"):
+        when = a.date.isoformat() if a.date else ""
+        chunks.append(DocumentChunk(resource_type="activity", resource_id=a.id, section="Institutional activity", text=(
+            f"{a.title}. {a.description} Activity type: {a.activity_type.replace('_', ' ')}. Organised by {a.organisation}"
+            f"{', ' + a.department if a.department else ''}. Location: {a.location}. Date: {when}. "
+            f"Audience: {a.audience}. Outcomes: {' '.join(a.outcomes or [])}")))
+    for t in _rows(db, Topic, only, "topic"):
+        chunks.append(DocumentChunk(resource_type="topic", resource_id=t.id, section="Topic", text=(
+            f"{t.name} — research topic ({t.category}). {t.description}")))
+    for c in _rows(db, GeneratedContent, only, "content", GeneratedContent.status == "published"):
+        body = re.sub(r"\[\d+\]|[#*_]", "", c.body)
+        for i, passage in enumerate(_pack_sentences(re.sub(r"\s+", " ", f"{c.title}. {body}"))[:6]):
+            chunks.append(DocumentChunk(resource_type="content", resource_id=c.id, chunk_index=i,
+                                        section="Published outreach", text=passage))
     return chunks
 
 
@@ -192,7 +247,14 @@ def index_resource(db: Session, resource_type: str, resource_id: int) -> None:
 
 
 def resource_passages_for(db: Session, resource_type: str, resource_id: int) -> list[DocumentChunk]:
-    return [c for c in resource_passages(db) if c.resource_type == resource_type and c.resource_id == resource_id]
+    return resource_passages(db, only=(resource_type, resource_id))
+
+
+def remove_resource(db: Session, resource_type: str, resource_id: int) -> None:
+    db.execute(delete(DocumentChunk).where(DocumentChunk.resource_type == resource_type,
+                                           DocumentChunk.resource_id == resource_id))
+    db.commit()
+    invalidate_caches()
 
 
 def vector_backend_name() -> str:

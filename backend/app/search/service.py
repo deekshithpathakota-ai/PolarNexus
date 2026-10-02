@@ -8,10 +8,24 @@ from sqlalchemy.orm import Session
 
 from app.models import User
 from app.search.hybrid import retrieve
+from app.services import provenance as prov
 from app.services.catalog import Catalog, Filters, apply_filters, build_catalog
 from app.utils.text import content_terms, normalize, snippet_around, stem
 
 SORTS = {"relevance", "newest", "oldest", "views", "alphabetical"}
+
+
+GROUP_ORDER = ["Documents", "Datasets", "Images", "Videos", "Expeditions", "Stations", "Researchers",
+               "Institutional Activities", "Topics", "Outreach Content"]
+
+
+def resource_group(c: dict) -> str:
+    t = c["type"]
+    if t == "media":
+        return "Videos" if c["extra"].get("media_type") == "video" else "Images"
+    return {"document": "Documents", "dataset": "Datasets", "expedition": "Expeditions", "station": "Stations",
+            "researcher": "Researchers", "activity": "Institutional Activities", "topic": "Topics",
+            "content": "Outreach Content"}.get(t, t.title())
 
 
 def _facets(cards: list[dict]) -> dict:
@@ -19,12 +33,26 @@ def _facets(cards: list[dict]) -> dict:
     kinds = Counter(c["kind"] for c in cards)
     topics = Counter(t for c in cards for t in c["topic_slugs"])
     years = [c["year"] for c in cards if c["year"]]
+    groups = Counter(resource_group(c) for c in cards)
+    verification: Counter = Counter()
+    for c in cards:
+        if c["type"] == "topic":
+            continue
+        pseudo = {"verification_status": c.get("verification", "unverified"),
+                  "source_type": prov.OFFICIAL_SOURCE_TYPE if c.get("official") else ""}
+        for label, pred in prov.FILTERS.items():
+            if pred(pseudo):
+                verification[label] += 1
+    orgs = Counter(c.get("organisation") for c in cards if c.get("organisation"))
     return {
         "regions": dict(regions.most_common()),
         "types": dict(kinds.most_common()),
         "topics": dict(topics.most_common(20)),
         "year_min": min(years) if years else None,
         "year_max": max(years) if years else None,
+        "resource_groups": {g: groups[g] for g in GROUP_ORDER if groups.get(g)},
+        "verification": {k: verification[k] for k in prov.FILTERS if verification.get(k)},
+        "organisations": dict(orgs.most_common(15)),
     }
 
 

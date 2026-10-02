@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
 
@@ -20,7 +21,7 @@ from app.rag.llm import LLMUnavailable, get_llm
 from app.rag.simplify import glossary_for, simplify
 from app.search.hybrid import ChunkHit, retrieve
 from app.search.keyword import _build as bm25_index
-from app.services.catalog import Catalog, build_catalog
+from app.services.catalog import NON_EVIDENCE_TYPES, Catalog, build_catalog
 from app.utils.text import content_terms, split_sentences, stem, stems
 
 log = logging.getLogger("polarnexus.rag")
@@ -38,12 +39,21 @@ INTENTS = OrderedDict([
     ("student", (r"student|simple|child|kid|school|beginner|plain language|layman|eli5", ["Abstract", "Background", "Key Findings"])),
 ])
 
-LIST_RE = re.compile(r"\b(which|list|show( me)?|find|what)\b.*\b(expeditions?|datasets?|stations?|resources?|documents?|reports?|media|videos?|images?)\b")
+LIST_RE = re.compile(r"\b(which|list|show( me)?|find|what)\b.*\b(expeditions?|datasets?|stations?|resources?|documents?|reports?|media|videos?|images?|activities|activity|workshops?|events?)\b")
+COMPOUND_RE = re.compile(
+    r"^(?P<main>(how|why|what|explain|describe|has|have|does|do|is|are)\b.+?)[\s,;]+and\s+"
+    r"(?P<list>(which|what)\s+(?P<noun>expeditions?|datasets?|stations?|researchers?|scientists?|activities|workshops?|events?|media|videos?|images?)\b.*)$",
+    re.I)
 THEMES_RE = re.compile(r"\b(major|main|key)?\s*(research )?(themes|topics|areas)\b")
 REGION_WORDS = {"antarctic": "Antarctic", "antarctica": "Antarctic", "arctic": "Arctic", "southern ocean": "Southern Ocean",
                 "himalaya": "Himalaya", "himalayan": "Himalaya"}
 TYPE_WORDS = {"expedition": "expedition", "dataset": "dataset", "station": "station", "media": "media", "video": "media",
-              "image": "media", "document": "document", "report": "document", "resource": None}
+              "image": "media", "document": "document", "report": "document", "resource": None,
+              "activitie": "activity", "activity": "activity", "workshop": "activity", "event": "activity",
+              "researcher": "researcher", "scientist": "researcher"}
+TYPE_PLURAL = {"expedition": "Expeditions", "dataset": "Datasets", "station": "Research stations", "media": "Media",
+               "researcher": "Researchers", "activity": "Institutional activities", "document": "Documents"}
+RELATED_GROUP_TYPES = ["document", "dataset", "expedition", "station", "media", "researcher", "activity"]
 
 
 @dataclass
@@ -219,10 +229,11 @@ def _list_answer(db: Session, cat: Catalog, question: str) -> dict | None:
     if not m:
         return None
     noun = m.group(3).rstrip("s")
-    rtype = TYPE_WORDS.get(noun)
+    rtype = TYPE_WORDS.get(noun, TYPE_WORDS.get(m.group(3)))
     region = next((v for k, v in REGION_WORDS.items() if k in q), None)
     subject = re.sub(r"\b(which|list|show|me|find|what|expeditions?|datasets?|stations?|resources?|documents?|reports?|"
-                     r"media|videos?|images?|studied|study|related|to|about|on|research|have|has|are|were|in|the|of)\b", " ", q)
+                     r"media|videos?|images?|activities|activity|workshops?|events?|studied|study|related|to|about|on|"
+                     r"research|have|has|are|were|in|the|of)\b", " ", q)
     if not content_terms(subject) and not region:
         return None
     r = retrieve(db, question, mode="hybrid", k=80)
@@ -231,6 +242,8 @@ def _list_answer(db: Session, cat: Catalog, question: str) -> dict | None:
     for h in r.hits:
         key = (h.chunk.resource_type, h.chunk.resource_id)
         if key in seen or (rtype and h.chunk.resource_type != rtype):
+            continue
+        if not rtype and h.chunk.resource_type in {"topic", "content"}:
             continue
         card = cat.card(*key)
         if not card or (region and card["region"] != region):
@@ -245,7 +258,8 @@ def _list_answer(db: Session, cat: Catalog, question: str) -> dict | None:
         return None
     evidence = _number_sources(cat, [h.chunk for h, _ in picked], {h.chunk.id: h.score for h, _ in picked})
     label = {"expedition": "expeditions", "dataset": "datasets", "station": "stations", "media": "media items",
-             "document": "documents"}.get(rtype or "", "resources")
+             "document": "documents", "activity": "institutional activities",
+             "researcher": "researcher profiles"}.get(rtype or "", "resources")
     lines = []
     for e, (_, card) in zip(evidence, picked):
         meta = " · ".join(str(x) for x in (card["kind"], card["region"], card["year"]) if x)
@@ -254,6 +268,46 @@ def _list_answer(db: Session, cat: Catalog, question: str) -> dict | None:
         lines.append(f"- **{card['title']}** ({meta}) — {first} [{e.n}]")
     answer = f"The repository contains these {label} matching your question:\n\n" + "\n".join(lines)
     return {"answer": answer, "evidence": evidence, "hits": r.hits}
+
+
+def _related_groups(cat: Catalog, evidence: list[Evidence], hits: list[ChunkHit], per_type: int = 5) -> dict[str, list[dict]]:
+    """Cross-modal 'Related Knowledge': resources of every type linked to (or retrieved alongside) the evidence."""
+    seen = {(e.chunk.resource_type, e.chunk.resource_id) for e in evidence}
+    scores: Counter = Counter()
+    for e in evidence:
+        for r in cat.related(e.chunk.resource_type, e.chunk.resource_id):
+            scores[(r["type"], r["id"])] += 2
+    for rank, h in enumerate(hits[:40]):
+        scores[(h.chunk.resource_type, h.chunk.resource_id)] += max(0.1, 1 - rank / 40)
+    groups: dict[str, list[dict]] = {t: [] for t in RELATED_GROUP_TYPES}
+    for key, _ in scores.most_common():
+        if key in seen or key[0] not in groups or len(groups[key[0]]) >= per_type:
+            continue
+        c = cat.card(*key)
+        if c:
+            groups[key[0]].append({k: c[k] for k in ("type", "id", "slug", "title", "kind", "region", "year", "url",
+                                                        "summary", "is_demo", "verification", "verification_label")})
+    return {t: v for t, v in groups.items() if v}
+
+
+def _compound_list(db: Session, cat: Catalog, rtype: str, evidence: list[Evidence], hits: list[ChunkHit],
+                   limit: int = 5) -> list[tuple[dict, DocumentChunk]]:
+    """Entities of `rtype` connected to the answer's evidence, each with the passage that describes it."""
+    scores: Counter = Counter()
+    for e in evidence:
+        for r in cat.related(e.chunk.resource_type, e.chunk.resource_id, {rtype}):
+            scores[(r["type"], r["id"])] += 2
+    for rank, h in enumerate(hits[:60]):
+        if h.chunk.resource_type == rtype and h.term_coverage >= 0.25:
+            scores[(h.chunk.resource_type, h.chunk.resource_id)] += max(0.2, 1 - rank / 60)
+    out = []
+    for key, _ in scores.most_common(limit):
+        card = cat.card(*key)
+        ch = db.scalar(select(DocumentChunk).where(DocumentChunk.resource_type == key[0], DocumentChunk.resource_id == key[1])
+                       .order_by(DocumentChunk.chunk_index))
+        if card and ch:
+            out.append((card, ch))
+    return out
 
 
 def _themes_answer(cat: Catalog, question: str) -> dict | None:
@@ -271,26 +325,32 @@ def _themes_answer(cat: Catalog, question: str) -> dict | None:
 
 def ask(db: Session, user: User | None, question: str, document_slug: str | None = None,
         mode: str = "hybrid") -> dict:
+    t0 = time.perf_counter()
     question = question.strip()
     cat = build_catalog(db, user)
+    compound = COMPOUND_RE.match(question) if not document_slug else None
+    rq = compound.group("main").strip(" ,;?") + "?" if compound else question  # the part answered from passages
+    list_type = TYPE_WORDS.get(compound.group("noun").lower().rstrip("s"), TYPE_WORDS.get(compound.group("noun").lower())) \
+        if compound else None
     doc: Document | None = None
     if document_slug:
         doc = db.scalar(select(Document).where(Document.slug == document_slug))
         if not doc or not cat.card("document", doc.id):
             doc = None
-    intent, intent_sections, fig = detect_intent(question)
+    intent, intent_sections, fig = detect_intent(rq)
     result: dict = {"question": question, "document": None, "intent": intent}
     if doc:
         result["document"] = {"slug": doc.slug, "title": doc.title, "url": f"/resources/{doc.slug}"}
 
     evidence: list[Evidence] = []
     hits: list[ChunkHit] = []
+    all_hits: list[ChunkHit] = []
     answer_text = ""
     gen_mode = "extractive"
     notice = ""
 
     # ---- 1. Structured questions answered from repository metadata (global scope only)
-    if not doc:
+    if not doc and not compound:
         themes = _themes_answer(cat, question)
         if themes:
             reps, used_ids = [], set()
@@ -329,13 +389,14 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
                 answer_text = ""
                 notice = f"The indexed text of this document does not describe Figure {fig}."
         else:
-            r = retrieve(db, question, mode=mode, k=24, document_id=doc.id if doc else None)
+            r = retrieve(db, rq, mode=mode, k=24 if not compound else 60, document_id=doc.id if doc else None)
+            all_hits = r.hits
             hits = r.hits
             notice = r.notice
             chosen: list[DocumentChunk] = []
             if doc and intent_sections:
                 chosen = [c for c in doc.chunks if c.section in intent_sections]
-            hits = [h for h in hits if h.chunk.resource_type not in {"researcher", "media"}]
+            hits = [h for h in hits if h.chunk.resource_type not in NON_EVIDENCE_TYPES]
             relevant = [h for h in hits if h.term_coverage >= 0.5 or (h.vector_sim >= 0.3 and h.term_coverage >= 0.25)
                         or (doc is not None and h.term_coverage >= 0.25)]
             intent_matched = bool(chosen)
@@ -344,17 +405,17 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
                     break  # document question answered from its dedicated section(s)
                 if h.chunk not in chosen and len(chosen) < 6:
                     chosen.append(h.chunk)
-            if not doc and _known_term_ratio(db, question) < 0.4:
+            if not doc and _known_term_ratio(db, rq) < 0.4:
                 chosen = []  # mostly out-of-domain vocabulary
             scores = {h.chunk.id: h.score for h in hits}
             evidence = _number_sources(cat, chosen[:6], scores)
 
             if evidence:
-                curated = None if get_llm() else match_curated(question, doc.slug if doc else None)
+                curated = None if get_llm() or compound else match_curated(question, doc.slug if doc else None)
                 llm_text = None
                 if not curated:
                     try:
-                        llm_text = _llm_answer(question, evidence, doc.title if doc else None, intent)
+                        llm_text = _llm_answer(rq, evidence, doc.title if doc else None, intent)
                     except LLMUnavailable:
                         notice = "The AI model is temporarily unavailable — showing an extractive answer built from repository passages."
                 if curated:
@@ -374,7 +435,7 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
                     else:
                         answer_text, gen_mode = llm_text, "llm"
                 if not answer_text and evidence:
-                    answer_text = _compose_extractive(question, evidence, intent, doc.title if doc else None)
+                    answer_text = _compose_extractive(rq, evidence, intent, doc.title if doc else None)
                     gen_mode = "extractive"
 
     # ---- 3. Validate citations and decide evidence status
@@ -393,7 +454,7 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
     missing: list[str] = []
     if answer_text and evidence and gen_mode in {"extractive", "llm"} and not (doc and intent_sections):
         ev_stems = set().union(*(stems(e.chunk.text + " " + e.title) for e in evidence))
-        missing = [t for t in content_terms(question) if stem(t) not in ev_stems]
+        missing = [t for t in content_terms(rq) if stem(t) not in ev_stems]
     if not answer_text or not evidence:
         status = "insufficient"
     elif missing:
@@ -406,7 +467,25 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
     else:
         status = "limited"
 
+    # ---- 4. Compound question: append the connected entities (each cited to its own record)
+    if compound and list_type and status != "insufficient":
+        listed = _compound_list(db, cat, list_type, evidence, (all_hits or hits))
+        heading = f"**{TYPE_PLURAL.get(list_type, 'Related records')} connected to this evidence**"
+        if listed:
+            lines = []
+            for card, ch in listed:
+                ev = Evidence(n=len(evidence) + 1, chunk=ch, title=card["title"], slug=card["slug"], url=card["url"])
+                evidence.append(ev)
+                meta = " · ".join(str(x) for x in (card["kind"], card["region"], card["year"]) if x)
+                sents = [x for x in split_sentences(ch.text) if not x.startswith(card["title"])]
+                lines.append(f"- **{card['title']}** ({meta}) — {(sents[0] if sents else card['summary'])} [{ev.n}]")
+            answer_text += f"\n\n{heading}\n\n" + "\n".join(lines)
+        else:
+            answer_text += f"\n\n{heading}\n\nNo {TYPE_PLURAL.get(list_type, 'records').lower()} in the repository are linked to these passages."
+        answer_text, _ = _validate_citations(answer_text, evidence)
+
     related = _related(cat, evidence, hits)
+    related_groups = _related_groups(cat, evidence, (all_hits or hits)) if evidence else {}
     if status == "insufficient":
         gen_mode = "insufficient"
         suggestions = [f"Search the repository for “{' '.join(content_terms(question)[:4])}”" if content_terms(question) else "Browse the Explore page"]
@@ -425,14 +504,22 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
     evidence_labels = {"strong": "Strong repository evidence", "limited": "Limited repository evidence",
                        "insufficient": "Insufficient repository evidence"}
     sources = [_source_entry(cat, e) for e in evidence]
+    if status == "insufficient":
+        related_groups = {}
+    types_covered = sorted({s["resource_type"] for s in sources})
     result.update(
         answer=answer_text, mode=gen_mode, mode_label=labels[gen_mode], evidence_status=status,
         evidence_label=evidence_labels[status], sources=sources, related=related, notice=notice,
+        related_groups=related_groups,
+        synthesis={"compound": bool(compound), "answered_part": rq if compound else None,
+                   "list_type": list_type, "evidence_types": types_covered,
+                   "related_types": list(related_groups)},
         retrieval={"mode": mode, "passages_considered": max(len(hits), len(sources)), "passages_used": len(sources)},
     )
     q = AIQuery(user_id=user.id if user else None, question=question[:2000], document_id=doc.id if doc else None,
                 mode=gen_mode, evidence_status=status, answer=answer_text[:8000],
-                sources=[{"n": s["n"], "slug": s["slug"], "section": s["section"]} for s in sources])
+                sources=[{"n": s["n"], "slug": s["slug"], "section": s["section"]} for s in sources],
+                duration_ms=round((time.perf_counter() - t0) * 1000, 1))
     db.add(q)
     db.commit()
     result["query_id"] = q.id

@@ -5,7 +5,9 @@ from app.models.knowledge import (  # noqa: F401
     DocumentChunk,
     EmbeddingModelStore,
     Expedition,
+    InstitutionalActivity,
     Media,
+    Provenance,
     Researcher,
     ResourceLink,
     ResourceTopic,
@@ -31,4 +33,5 @@ RESOURCE_MODELS = {
     "station": Station,
     "researcher": Researcher,
     "topic": Topic,
+    "activity": InstitutionalActivity,
 }

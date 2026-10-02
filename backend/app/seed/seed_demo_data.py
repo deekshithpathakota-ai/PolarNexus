@@ -82,9 +82,15 @@ def compose_content(abstract: str, sections: list[tuple]) -> str:
 
 
 def reset_schema() -> None:
+    from sqlalchemy import text
+
+    from app.core.migrations import migrate
     detect_vector_backend()
     Base.metadata.drop_all(engine)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS schema_migrations"))
     Base.metadata.create_all(engine)
+    migrate(engine)
 
 
 def seed(db: Session) -> dict:
@@ -254,6 +260,11 @@ def seed(db: Session) -> dict:
         tag("media", m.id, list(dict.fromkeys(tids)))
     db.commit()
 
+    # ---------- v2: institutional activities + media map positions (linked to the records above)
+    from app.seed.extensions import index_new_passages, link_media_coordinates, seed_activities
+    n_activities = seed_activities(db)
+    link_media_coordinates(db)
+
     # ---------- search & semantic index
     idx = reindex_all(db)
     ensure_fulltext_index(db)
@@ -296,6 +307,7 @@ def seed(db: Session) -> dict:
          "Superseded by the updated aerosol highlight; please regenerate after the internal draft is reviewed.")
     make("public", "topic", "stratospheric-ozone", "under_review", users["lakshmi.s@polarnexus.demo"], 1.5)
     db.commit()
+    index_new_passages(db)  # published outreach becomes discoverable in unified search
 
     # ---------- telemetry history (prototype demonstration analytics)
     popular = sorted(documents.values(), key=lambda x: -x[0].views)
@@ -387,11 +399,14 @@ def seed(db: Session) -> dict:
                      query={"q": "Southern Ocean", "mode": "hybrid"}))
     db.commit()
 
+    from app.services.provenance import ensure_all
+    ensure_all(db)
+
     counts = {name: db.scalar(select(func.count()).select_from(model)) for name, model in [
         ("documents", Document), ("datasets", Dataset), ("dataset_records", DatasetRecord), ("media", Media),
         ("expeditions", Expedition), ("stations", Station), ("researchers", Researcher), ("topics", Topic),
         ("users", User), ("links", ResourceLink)]}
-    counts.update(index=idx)
+    counts.update(index=idx, activities=n_activities)
     return counts
 
 

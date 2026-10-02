@@ -42,16 +42,20 @@ router = APIRouter(prefix="/api", tags=["knowledge"])
 
 def parse_filters(region: list[str] | None, type_: list[str] | None, topic: list[str] | None, year_from: int | None,
                   year_to: int | None, station: str | None, expedition: str | None, researcher: str | None,
-                  language: str | None, data_type: str | None) -> Filters:
+                  language: str | None, data_type: str | None, verification: list[str] | None = None,
+                  organisation: str | None = None, activity_type: str | None = None) -> Filters:
     return Filters(regions=[r for r in (region or []) if r], types=[t for t in (type_ or []) if t],
                    topics=[t for t in (topic or []) if t], year_from=year_from, year_to=year_to, station=station or None,
                    expedition=expedition or None, researcher=researcher or None, language=language or None,
-                   data_type=data_type or None)
+                   data_type=data_type or None, verification=[v for v in (verification or []) if v],
+                   organisation=organisation or None, activity_type=activity_type or None)
 
 
 def _list(db, user, restrict: set[str] | None, q, mode, sort, page, page_size, region, type_, topic, year_from, year_to,
-          station, expedition, researcher, language, data_type):
-    f = parse_filters(region, type_, topic, year_from, year_to, station, expedition, researcher, language, data_type)
+          station, expedition, researcher, language, data_type, verification=None, organisation=None,
+          activity_type=None):
+    f = parse_filters(region, type_, topic, year_from, year_to, station, expedition, researcher, language, data_type,
+                      verification, organisation, activity_type)
     return search_resources(db, user, q or "", mode, f, sort=sort, page=page, page_size=page_size, restrict_types=restrict)
 
 
@@ -62,10 +66,12 @@ def _common(q: str | None = Query(None, max_length=300), mode: str = Query("hybr
             topic: list[str] | None = Query(None), year_from: int | None = Query(None, ge=1800, le=2100),
             year_to: int | None = Query(None, ge=1800, le=2100), station: str | None = None,
             expedition: str | None = None, researcher: str | None = None, language: str | None = None,
-            data_type: str | None = None):
+            data_type: str | None = None, verification: list[str] | None = Query(None),
+            organisation: str | None = Query(None, max_length=255), activity_type: str | None = Query(None, max_length=48)):
     return dict(q=q, mode=mode, sort=sort, page=page, page_size=page_size, region=region, type_=type, topic=topic,
                 year_from=year_from, year_to=year_to, station=station, expedition=expedition, researcher=researcher,
-                language=language, data_type=data_type)
+                language=language, data_type=data_type, verification=verification, organisation=organisation,
+                activity_type=activity_type)
 
 
 def _view(db: Session, obj, rtype: str, user: User | None):
@@ -75,7 +81,8 @@ def _view(db: Session, obj, rtype: str, user: User | None):
 
 
 def _related_block(cat: Catalog, rtype: str, rid: int) -> dict:
-    groups: dict[str, list] = {"document": [], "dataset": [], "media": [], "expedition": [], "station": [], "researcher": []}
+    groups: dict[str, list] = {"document": [], "dataset": [], "media": [], "expedition": [], "station": [], "researcher": [],
+                               "activity": [], "content": []}
     for r in cat.related(rtype, rid):
         groups.setdefault(r["type"], []).append(r)
     # topic-based "similar" resources (same topics, not already linked)
@@ -85,7 +92,7 @@ def _related_block(cat: Catalog, rtype: str, rid: int) -> dict:
     if card:
         mine = set(card["topic_slugs"])
         for c in cat.cards.values():
-            if (c["type"], c["id"]) in linked or c["type"] in {"researcher"}:
+            if (c["type"], c["id"]) in linked or c["type"] in {"researcher", "topic"}:
                 continue
             overlap = len(mine & set(c["topic_slugs"]))
             if overlap:
@@ -109,7 +116,7 @@ def _get_or_404(db: Session, model, slug: str, label: str):
 
 # ----------------------------------------------------------------------- resources / documents
 @router.get("/resources")
-def list_resources(params: dict = Depends(_common), kind: str | None = Query(None, pattern="^(document|dataset|media|expedition|station|researcher)$"),
+def list_resources(params: dict = Depends(_common), kind: str | None = Query(None, pattern="^(document|dataset|media|expedition|station|researcher|activity|topic|content)$"),
                    db: Session = Depends(get_db), user: User | None = Depends(get_current_user_optional)):
     restrict = {kind} if kind else None
     return _list(db, user, restrict, **params)

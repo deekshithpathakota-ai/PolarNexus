@@ -38,6 +38,20 @@ class Settings(BaseSettings):
     STORAGE_KEY: str = ""
     STORAGE_SECRET: str = ""
     MAX_UPLOAD_MB: int = 25
+    # Media ingestion limits (images are decoded with Pillow; video metadata/thumbnails use ffmpeg when installed)
+    MAX_IMAGE_MB: int = 20
+    MAX_VIDEO_MB: int = 200
+    MAX_IMAGE_PIXELS: int = 60_000_000  # decompression-bomb guard
+    # Optional speech-to-text (OpenAI-compatible /audio/transcriptions). Uses OPENAI_API_KEY when set.
+    STT_MODEL: str = "whisper-1"
+    STT_ENABLED: bool = True
+
+    # CORS: allow *.vercel.app preview deployments (convenient for the hackathon; disable for production)
+    CORS_ALLOW_VERCEL_PREVIEWS: bool = True
+
+    # Login throttling (per client IP + email, in-memory)
+    LOGIN_MAX_FAILURES: int = 10
+    LOGIN_WINDOW_SECONDS: int = 300
 
     @property
     def cors_origins(self) -> list[str]:
@@ -60,6 +74,14 @@ class Settings(BaseSettings):
     @property
     def llm_enabled(self) -> bool:
         return bool(self.OPENAI_API_KEY)
+
+    @property
+    def stt_enabled(self) -> bool:
+        return bool(self.OPENAI_API_KEY) and self.STT_ENABLED
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() == "production"
 
 
 @lru_cache
