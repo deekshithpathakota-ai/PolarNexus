@@ -133,7 +133,7 @@ export default function CampaignPage() {
           {c.status !== "archived" && <Button size="sm" variant="ghost" icon={<Archive className="h-4 w-4" />} onClick={async () => { await del(`/api/campaigns/${c.slug}`); toast("success", "Campaign archived"); reload(); }}>Archive</Button>}
         </div>
       </header>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <Card className="min-w-0 p-5">
           <div className="mb-3 flex justify-end"><Tabs value={view} onChange={setView} tabs={[{ key: "calendar", label: "Calendar" }, { key: "list", label: "List" }]} /></div>
           {view === "calendar" ? (

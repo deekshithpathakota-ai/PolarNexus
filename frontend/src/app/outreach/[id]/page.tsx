@@ -42,7 +42,7 @@ export default function OutreachItem() {
   return (
     <Container className="max-w-[1150px]">
       <BackLink href="/outreach" label="Back to Outreach Feed" />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <article className="min-w-0 space-y-5">
           <Card className="overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 border-b border-frost bg-snow/60 px-6 py-3">

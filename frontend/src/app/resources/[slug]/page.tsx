@@ -100,7 +100,7 @@ function ResourceDetail() {
         )}
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <div ref={tabsRef} className="scroll-mt-20">
             <Tabs

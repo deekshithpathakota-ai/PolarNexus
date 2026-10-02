@@ -123,7 +123,7 @@ export default function StoryPage() {
         </ol>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <Card className="p-5">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

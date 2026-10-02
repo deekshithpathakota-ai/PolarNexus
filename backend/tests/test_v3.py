@@ -464,3 +464,14 @@ def test_v3_migration_adds_columns_without_data_loss(tmp_path):
     with eng.connect() as conn:
         assert conn.execute(text("SELECT title, metadata_only FROM documents WHERE id = 1")).one() == ("Kept row", 0)
     assert {"research_stories", "campaigns", "resource_versions", "visual_embeddings"} <= set(inspect(eng).get_table_names())
+
+
+def test_translation_guard_preserves_citations_numbers_units():
+    from app.api.workflow import translation_problems
+
+    src = "Sea ice covered 18.2 million km² in September 1979 [1] and 2 °C warming is discussed [2]."
+    ok = "समुद्री बर्फ ने सितंबर 1979 में 18.2 million km² को ढका [1] और 2 °C गर्मी पर चर्चा है [2]."
+    assert translation_problems(src, ok) == []
+    assert "numbers changed" in translation_problems(src, ok.replace("18.2", "18"))
+    assert "citation markers changed" in translation_problems(src, ok.replace("[2]", ""))
+    assert "units changed" in translation_problems(src, ok.replace("km²", "km"))

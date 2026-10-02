@@ -24,7 +24,7 @@ export default function CalendarPage() {
     <Container>
       <PageHeader eyebrow="Outreach" title="Content Calendar" description="Every planned, scheduled and published outreach item across campaigns."
         actions={<LinkButton href="/campaigns" variant="secondary" icon={<Megaphone className="h-4 w-4" />}>Campaigns</LinkButton>} />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <Card className="min-w-0 p-5">
           {error ? <ErrorState error={error} onRetry={reload} /> : loading && !data ? <Skeleton className="h-[480px] w-full" /> : (
             <ContentCalendar month={month} onMonth={setMonth} items={data?.events || []} onSelect={setSelected} />

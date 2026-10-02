@@ -32,7 +32,7 @@ export default function ResearcherDetail() {
         </div>
         <div className="sm:ml-auto"><OutreachButton type="researcher" slug={r.slug} size="sm" /></div>
       </header>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-6">
           <RelatedKnowledge related={r.related} graph={{ type: "researcher", slug: r.slug }} />
           <Card className="p-5">

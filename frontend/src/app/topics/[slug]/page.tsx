@@ -43,7 +43,7 @@ export default function TopicPage() {
           <LinkButton href={`/assistant?q=${encodeURIComponent(`What does the repository say about ${t.name.toLowerCase()}?`)}`} variant="secondary" size="sm">Ask the AI</LinkButton>
         </div>
       </header>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <Card className="p-5">
             <h2 className="mb-1 text-lg text-night">Knowledge Timeline</h2>

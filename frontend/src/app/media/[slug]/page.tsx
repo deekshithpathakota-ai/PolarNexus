@@ -39,7 +39,7 @@ export default function MediaDetail() {
   return (
     <Container>
       <BackLink href="/media" label="Back to Media library" />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-6">
           <figure className="overflow-hidden rounded-2xl border border-frost bg-night shadow-card">
             <div className="relative aspect-[16/10]">

@@ -72,7 +72,7 @@ function Builder() {
     <Container>
       <BackLink href="/stories" label="Back to Research Stories" />
       <PageHeader eyebrow="Research Story builder" title="Connect a piece of research" description="Start from any record. Connected items come from the knowledge graph — remove what does not belong, or search to add more. Explanations are generated only from cited evidence." />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-4">
           <Card className="p-5">
             <Field label="Story title">

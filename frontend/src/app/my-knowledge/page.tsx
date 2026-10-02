@@ -32,7 +32,7 @@ function MyKnowledge() {
     <Container className="max-w-[1100px]">
       <PageHeader eyebrow="Personal" title="My Knowledge" description="Your saved documents, datasets, media and searches." />
       {error ? <ErrorState error={error} onRetry={reload} /> : loading ? <Skeleton className="h-64 w-full rounded-2xl" /> : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <Card className="p-5">
             <h2 className="mb-3 font-mono text-[11px] uppercase tracking-wider text-steel">Saved resources · {items.length}</h2>
             {items.length === 0 ? <EmptyState icon={<Bookmark className="h-6 w-6" />} title="Nothing saved yet" body="Use the Save button on any resource page." /> : (

@@ -46,7 +46,7 @@ export default function StationDetail() {
           </div>
         </div>
       </div>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <RelatedKnowledge related={s.related} graph={{ type: "station", slug: s.slug }} />
           <Card className="p-5">

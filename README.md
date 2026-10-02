@@ -11,7 +11,9 @@ PolarNexus is a full-stack prototype of an **integration, discovery, intelligenc
 4. **turned into outreach** (student, public, social, media formats), and
 5. **disseminated only after human review**.
 
-> ⚠️ **Prototype demonstration data.** Documents, datasets (synthetic values), media (original generated artwork), researchers and most expedition details are illustrative. Station facts marked *verified* are limited to widely published, high-level facts (location, approximate coordinates, year established). Nothing here is an official NCPOR/MoES record.
+> ⚠️ **Prototype demonstration data — clearly separated from real records.** Documents, most datasets (synthetic values), illustrated media, researchers and most expedition details are illustrative and labelled *Demo* / *Synthetic*. Station facts marked *verified* are limited to widely published, high-level facts. **v3 adds real, publicly accessible records labelled *Public source*:** NSIDC Sea Ice Index v4 monthly extent files (values unmodified), 11 openly licensed Wikimedia Commons photographs (licence, author and source page shown), and metadata-only catalogue entries for official resources (Indian Antarctic Act 2022, India's Arctic Policy, NCPOR, the Antarctic Treaty Secretariat, NSIDC). Nothing here is an official NCPOR/MoES record.
+
+**Journey:** DISCOVER → UNDERSTAND → VERIFY → CREATE → REVIEW → DISSEMINATE → MEASURE.
 
 ---
 
@@ -38,13 +40,17 @@ PolarNexus is a full-stack prototype of an **integration, discovery, intelligenc
             Vercel                                                         Render / Railway / Docker
                                                                                │
               ┌────────────────────────────────────────────────────────────────┤
-              │ auth/      JWT + bcrypt, RBAC (public · researcher · editor · admin)
-              │ search/    keyword (Postgres FTS, BM25 fallback) + vector → Reciprocal Rank Fusion
-              │ rag/       embeddings (OpenAI-compatible | offline LSA) · pgvector store
-              │            · grounded answering · citation validation · curated demo fallback
+              │ auth/      JWT bearer + HttpOnly session cookie (CSRF header guard), bcrypt, RBAC
+              │ search/    keyword (Postgres FTS, BM25 fallback) + vector + CLIP visual → RRF fusion,
+              │            authority weighting, "why this matched"
+              │ rag/       embeddings (OpenAI-compatible | offline LSA) · pgvector store · grounded answering
+              │            · evidence sufficiency + 4-level strength · citation validation · audience modes
               │ content/   outreach generator (LLM | template) · heuristic evidence check
-              │ ingestion/ validate → extract (PyMuPDF) → metadata → chunk → embed → index
-              │ api/       REST routers · audit log · analytics · notifications
+              │ ingestion/ documents (PyMuPDF → OCR fallback) · media (EXIF/ffprobe → key frames → CLIP)
+              │            · datasets (CSV/JSON → schema → validation → confirm → register)
+              │ services/  provenance · versions (append-only) · FAIR metadata · lineage · duplicates
+              │            · storage (local | S3-compatible) · stories · visual (CLIP, fastembed/ONNX)
+              │ api/       REST routers · audit log · analytics · campaigns · notifications
               ▼
         PostgreSQL 16 + pgvector   (SQLite + in-process numpy fallback)
 ```
@@ -104,6 +110,19 @@ frontend/src/
 | **Knowledge Timeline** *(v2)* | Chronological, clickable record view for any topic, expedition, station or researcher, filterable by year range and resource type; on topic/expedition/station/researcher pages and at `/timeline` |
 | **Impact & KPIs** *(v2)* | `/impact`: resources by type and verification, AI usage (grounded vs insufficient, citation validation rate on live answers), content workflow counts, discovery, **measured** search/AI latency (live requests only), qualitative before/after table. Labelled "Prototype Demonstration Metrics" |
 | **Graph, map, i18n** *(v2)* | Graph includes activities, topics and published outreach (click to open); map adds media and activity layers with verification in the popup; English/Hindi/Telugu navigation switch (English default; content is never machine-translated outside the reviewed workflow) |
+| **Public-source data** *(v3)* | NSIDC Sea Ice Index v4 (Antarctic Feb/Sep, Arctic Sep, 1979–2026) ingested through the CSV pipeline with values unmodified; 11 Wikimedia Commons photographs (CC/PD/GODL-India) with licence, author, date, source page and written alt text; 6 metadata-only official resources. New verification status **Public source** (filterable), never confused with Demo/Synthetic |
+| **Visual semantic search** *(v3)* | CLIP ViT-B/32 (ONNX via `fastembed`, no PyTorch). Photos are embedded on ingestion; videos are split into representative key frames (scene changes + even sampling, capped) with timestamps. `/visual-search` and the Media page find images from a description ("iceberg near a research vessel") even when the words are not in the metadata; video hits show "Relevant frame — 02:14". Visual relevance joins hybrid search as an extra RRF list. Unavailable → reported, never faked |
+| **Hybrid ranking v3** *(v3)* | Verified / partner / public-source records get a modest authority multiplier (demo never does); every result explains "Why this matched" (keyword terms, title, semantic similarity, visual similarity + frame, topic, station/expedition filter match, source status) |
+| **AI v3** *(v3)* | `LLM_PROVIDER/LLM_API_KEY/LLM_BASE_URL/EMBEDDING_*` (OpenAI-compatible); 4-level evidence strength (strong · moderate · limited · insufficient — rule-based, not a probability) alongside the unchanged 3-level status; evidence basis (how many cited records are demo vs public/verified, with a warning when all are demo); a visible pipeline trace; Researcher / Teacher / Student / Public modes (teacher mode adds teaching points quoted from sources and discussion questions); per-source verification badges |
+| **Research Stories** *(v3)* | Build a story from any record: topic → paper → dataset → expedition → station → photographs → video → researchers, from real graph links (editable). Scientific / Public / Student explanations generated only from the primary paper's cited sections; timeline, map, evidence list, evidence basis; drafts are private, editors publish; archive never deletes |
+| **Campaign Planner & Content Calendar** *(v3)* | Campaigns (dates, audiences, topics, channels, draft/scheduled/published/archived), calendar items linked to outreach content. **An item can be scheduled only after an editor approved its content**; publishing calls the Review Center's publish transition. Website is live; Social / Newsletter / Educational Portal are labelled simulations. Month grid on desktop, agenda on mobile |
+| **Outreach Impact Analytics** *(v3)* | Views, clicks, shares, engagement and completion by campaign, content, audience, channel, format and week; popular topics; research-to-content conversion. Published pages record real view/click/share/complete events; seeded engagement is flagged and the dashboard shows **DEMO METRICS** (toggle to live-only) |
+| **Dataset ingestion** *(v3)* | CSV / TSV / JSON / GeoJSON: format detection, schema + column-type inference, lat/lon/time detection (incl. year+month), preview, validation (missing values, duplicate rows, invalid numbers/dates/coordinates, mixed types, fill values), user-supplied units (never guessed), confirm → background registration → indexing → explorer. Parser registry ready for NetCDF |
+| **OCR** *(v3)* | Scanned PDF pages (too little embedded text) are rendered at 200 dpi and read by tesseract; page numbers kept so citations still say "p. 17"; OCR status shown on the document and job |
+| **Scientific trust** *(v3)* | Append-only **version history** (import, metadata correction, new file, verification change; snapshots never overwritten); **FAIR metadata** (Dublin Core + DataCite-style DOI/version, completeness, missing fields shown as missing, ORCID only if stored); **provenance pipeline** Source → Ingestion → Processing → Transformation → AI Generation → Human Review → Publication with "Generated from" for outreach |
+| **Duplicate detection** *(v3)* | Content hash, DOI, title / file-name similarity and text overlap for documents (pre-upload check), datasets (at analysis) and media; *Keep both · Update existing (new version) · Review · Cancel*; nothing is merged or deleted automatically |
+| **Admin platform health** *(v3)* | Repository (verified/public/pending/demo, failed ingestion, queue, storage durability), AI (requests, retrieval success, insufficient evidence, citation-validation failures, LLM/visual/OCR status, rebuild visual index), content states, data quality (duplicate candidates, missing metadata, OCR failures, invalid datasets) |
+| **Premium sign-in** *(v3)* | Polar-science scene: dark sky, CSS aurora, ice-shelf silhouette, a small canvas of snow + "observation" particles with faint links, a slowly rotating polar graticule; logo fade/scale, card fade/rise/blur-to-clear, input focus glow, polar-light sheen on the button, PolarNexus loading state. Reduced motion → static scene; fewer particles on small screens; capped at ~30 fps and paused when hidden. Auth logic unchanged |
 | **Platform** | RBAC on every endpoint; audit logging; notifications; saved items and search history ("My Knowledge"); loading, empty and error states everywhere; error boundaries; 404 page; responsive layout with mobile bottom nav |
 
 ---
@@ -117,6 +136,8 @@ frontend/src/
 cd backend
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+pip install -r requirements-visual.txt                   # optional: CLIP visual search (~350 MB model download on first use)
+# optional system tools: ffmpeg (video), tesseract-ocr (OCR) — e.g. apt install ffmpeg tesseract-ocr
 cp .env.example .env                                     # set DATABASE_URL and JWT_SECRET
 python -m app.seed.seed_demo_data                        # optional: the API auto-seeds an empty DB
 uvicorn app.main:app --reload --port 8000                # http://localhost:8000/docs
@@ -152,7 +173,14 @@ docker compose up --build        # db + backend + frontend → http://localhost:
 | `OPENAI_API_KEY` | backend | Optional. Enables LLM generation and neural embeddings |
 | `OPENAI_BASE_URL` / `LLM_MODEL` / `EMBEDDING_MODEL` | backend | Any OpenAI-compatible provider |
 | `STORAGE_DIR`, `MAX_UPLOAD_MB` | backend | Upload storage and limit |
-| `STORAGE_URL` / `STORAGE_KEY` / `STORAGE_SECRET` | backend | Reserved for S3/Supabase storage (see limitations) |
+| `LLM_PROVIDER` / `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | backend | v3 provider-neutral LLM settings (OpenAI-compatible). `LLM_PROVIDER=none` forces the offline fallback |
+| `EMBEDDING_PROVIDER` / `EMBEDDING_API_KEY` / `EMBEDDING_BASE_URL` / `EMBEDDING_MODEL` | backend | Neural embeddings via an API, or `local` for offline LSA |
+| `VISUAL_SEARCH_PROVIDER` (`auto`/`clip`/`none`), `VISUAL_IMAGE_MODEL`, `VISUAL_TEXT_MODEL`, `VISUAL_MODEL_CACHE`, `VISUAL_MIN_SIMILARITY`, `VIDEO_MAX_KEYFRAMES` | backend | CLIP visual search (needs `pip install -r requirements-visual.txt`) |
+| `OCR_ENABLED`, `OCR_LANGUAGES`, `OCR_MIN_CHARS_PER_PAGE`, `OCR_MAX_PAGES` | backend | OCR for scanned PDFs (needs the `tesseract` binary) |
+| `MAX_DATASET_MB`, `MAX_DATASET_ROWS` | backend | Dataset ingestion limits |
+| `STORAGE_BACKEND` (`local`/`s3`), `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PREFIX` | backend | Object storage (needs `pip install -r requirements-s3.txt`) |
+| `RATE_LIMIT_AI_PER_MINUTE`, `RATE_LIMIT_UPLOADS_PER_MINUTE` | backend | Per-IP limits for AI and uploads (0 disables) |
+| `AUTH_COOKIE_ENABLED`, `AUTH_COOKIE_NAME` | backend | HttpOnly session cookie alongside the bearer token |
 | `BACKEND_URL` | frontend | Where `/api/*` is proxied (server-side; never exposed) |
 | `NEXT_PUBLIC_API_URL` | frontend | Optional direct browser → API calls |
 | `NEXT_PUBLIC_BRAND_NAME` | frontend | Rename the product in the UI (e.g. `PolarVerse`) |
@@ -233,7 +261,9 @@ Signed-in demo users can switch roles instantly from the user menu (top right).
 ## Testing
 
 ```bash
-cd backend && pip install -r requirements-dev.txt && pytest -q          # 34 API tests (13 original + 21 v2)
+cd backend && pip install -r requirements-dev.txt && pytest -q          # 61 API tests (13 original + 21 v2 + 27 v3)
+BASE_URL=http://localhost:3000 npm run e2e:v3        # (frontend) v3 journey: sign-in, why-matched, public data, teacher mode,
+                                                    # stories, visual search, dataset ingestion, campaigns, analytics, admin, mobile
 cd frontend && npm run typecheck && npm run lint && npm run build
 cd frontend && npx playwright install chromium
 BASE_URL=http://localhost:3000 npm run e2e            # original demo flow + 25-route smoke + mobile checks
@@ -245,6 +275,19 @@ The backend tests cover search and filters, internal-document visibility, RAG ci
 Verified during development: tests pass on PostgreSQL 16 + pgvector **and** on SQLite (no pgvector); the LLM path was tested against a mock OpenAI-compatible server (a fabricated `[9]` citation was stripped); an unreachable LLM falls back to extractive answers and keyword search with visible notices; the e2e suite passes against the production build (`next start`) with 0 console errors.
 
 ---
+
+## v3 demo flow (≈4 minutes)
+
+1. **/login** — the polar sign-in (aurora, particles, grid); click *Researcher Demo*.
+2. Search **`Antarctic sea ice`** — open a card's *Why this matched*; note **Public source** next to **Demo** records.
+3. Open **Sea Ice Index v4 — Antarctic … September** — real NSIDC values, *Public source* provenance, *Scientific trust* → Pipeline / Versions / Metadata (DOI shown as *missing*, not invented).
+4. **/assistant**, mode **Teacher**: *"What factors influence Antarctic sea-ice variability?"* — strength pill, the demo-evidence warning, teaching points, *How this answer was produced*.
+5. **Research Stories** → the demo story: chain, Public / Student explanations with citations, timeline, map, evidence basis.
+6. **Visual Media Search**: *"iceberg near a research vessel"* → the RRS Ernest Shackleton photo, although "vessel" is not in its metadata.
+7. **Researcher Workspace → Dataset**: upload a CSV → schema, validation issues, preview → add units → confirm → explore.
+8. **Content Studio → Evidence check → Review** (unchanged v2 flow).
+9. **Campaign Planner** → *Antarctic Science Week 2026 (demo)*: an unapproved item cannot be scheduled; simulated channels are labelled; **Content Calendar**.
+10. **Outreach Analytics** (*DEMO METRICS* badge; untick to see live-only), then as Admin the **Dashboard** health panels.
 
 ## Implemented vs demonstration functionality
 
@@ -260,20 +303,28 @@ Verified during development: tests pass on PostgreSQL 16 + pgvector **and** on S
 | Provenance records, verification workflow, demo/synthetic guard | Institutional activities are demonstration records (fictional "(demo)" organisers, generic venues) |
 | Timeline and impact metrics computed from the database; latency measured on live requests | Hindi/Telugu cover the navigation only and are a prototype translation pending native-speaker review |
 | Analytics computed from DB events | Historical analytics are seeded demo activity (labelled "Prototype Demonstration Analytics") |
+| *(v3)* NSIDC datasets, Commons photographs, official-resource records — real, labelled *Public source* | Metadata-only records store a short neutral description, not the full text |
+| *(v3)* CLIP visual search, key frames, OCR, CSV/JSON ingestion, duplicates, versions, FAIR, lineage, stories, campaigns, cookie sessions, rate limits | Outreach engagement seeded for the demo campaign is synthetic and shown as **DEMO METRICS**; Social/Newsletter/Educational-Portal publishing is simulated |
 
 ---
 
 ## Known limitations
 
 - **No live deployment from this build environment**: deployment configs are included and the production build was tested locally, but the Vercel/Render URLs must be created from your accounts.
-- OCR for scanned PDFs is not enabled (such uploads fail with a clear message). Dataset (CSV/JSON) upload is not wired; datasets are managed as metadata records. Image and video upload **is** wired (Researcher Workspace → Image / Video).
+- *(v3)* OCR needs the `tesseract` binary (installed by the Dockerfile; absent on Render's native runtime → scanned PDFs fail with a clear message). Handwriting and poor scans may OCR badly; OCR text is labelled.
+- *(v3)* Visual search needs the optional `fastembed` package and a one-time ~350 MB model download; CLIP ViT-B/32 is a general model — similarity scores are relevance, not certainty. Illustrated demo media has no image file and is not visually indexed. Render's free tier is configured with `VISUAL_SEARCH_PROVIDER=none` (memory).
+- *(v3)* NetCDF/HDF5 datasets are not supported yet (the parser registry is ready). Dataset registration keeps up to `MAX_DATASET_ROWS` rows.
+- *(v3)* The S3 storage backend is implemented but was **not tested against a real bucket** in this build environment. Existing v1/v2 pipelines write locally and mirror to S3 when configured.
+- *(v3)* Knowledge graph, map and timeline gained the new public-source records automatically (they flow through the same catalogue) but no new layout features; campaign items are not on the knowledge timeline.
+- *(v3)* Hindi/Telugu cover the navigation (now including the new pages) and are pending native-speaker review; machine translations of outreach are kept only if citation markers, numbers and units survive.
 - Video processing needs `ffmpeg`/`ffprobe` on the API host (installed by the Dockerfile; on Render's native Python runtime it is usually absent — those steps are then shown as skipped). Speech-to-text needs `OPENAI_API_KEY`.
 - Uploaded media files are served by the API. Browsers load them without the auth header, so internal-visibility uploads are viewable by their uploader only through the API, not inline.
 - Uploaded files are stored on local disk; on free hosting tiers they are lost on restart (extracted text and index remain in the database). S3/Supabase storage is configured in env but not implemented.
-- Institutional SSO is not implemented (JWT accounts only). The JWT is stored in `localStorage`; production should use httpOnly cookies.
+- Institutional SSO is not implemented (JWT accounts only). *(v3)* An HttpOnly, SameSite=Lax session cookie (Secure in production) is now issued alongside the bearer token, so media files load for their uploader; the SPA still keeps the bearer token in `localStorage` for backward compatibility — removing it is a follow-up.
+- *(v3)* Rate limiting is in-memory per API instance; multi-instance deployments need a shared limiter.
 - Offline LSA embeddings capture co-occurrence, not deep meaning. Configure an embedding API for production-quality semantic search, then **Admin → Repository → Rebuild index**.
 - Multilingual support is a foundation: the navigation shell switches to Hindi/Telugu and outreach can be drafted as a translation (machine-translated only with an LLM, citation markers verified; always human-reviewed). Page content and the corpus remain English.
-- Schema changes use an additive start-up migrator (`app/core/migrations.py`, recorded in `schema_migrations`), not Alembic. It only adds tables/columns and runs idempotent backfills.
+- Schema changes use an additive start-up migrator (`app/core/migrations.py`, recorded in `schema_migrations`), not Alembic. It only adds tables/columns and runs idempotent backfills. *(v3)* Verified: a v2 PostgreSQL database upgrades in place (all rows kept, public-source records, demo story/campaign and version baselines added).
 
 ---
 

@@ -28,3 +28,7 @@ services:
         value: https://your-frontend.vercel.app
       - key: OPENAI_API_KEY
         sync: false
+      # Render's native Python runtime has no ffmpeg/tesseract and limited memory: keep CLIP off here.
+      # Use backend/Dockerfile (runtime: docker) to get OCR, video key frames and visual search.
+      - key: VISUAL_SEARCH_PROVIDER
+        value: none

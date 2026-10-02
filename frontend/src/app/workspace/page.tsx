@@ -193,9 +193,9 @@ function Workspace() {
     <Container>
       <PageHeader eyebrow="Researcher" title="Researcher Workspace" description="Upload resources into the repository, follow their processing, and turn your research into outreach drafts."
         actions={<Link href="/studio" className="inline-flex h-10 items-center gap-2 rounded-lg bg-night px-4 text-sm font-medium text-white hover:bg-deep"><SquarePen className="h-4 w-4" /> Content Studio</Link>} />
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
-          <Tabs className="mb-4 w-fit" value={mode} onChange={setMode}
+          <Tabs className="mb-4 w-fit max-w-full" value={mode} onChange={setMode}
             tabs={[{ key: "document", label: "Document" }, { key: "dataset", label: "Dataset (CSV · JSON)" }, { key: "media", label: "Image / Video" }]} />
           {mode === "document" ? <Uploader onDone={() => setTick((t) => t + 1)} /> : mode === "dataset" ? <DatasetUploader /> : <MediaUploader onDone={() => setTick((t) => t + 1)} />}
         </div>

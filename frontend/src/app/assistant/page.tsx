@@ -33,7 +33,7 @@ function Assistant() {
         title={`${BRAND} AI`}
         description="Ask questions about polar science. Answers are built only from repository evidence, with citations you can open and an honest evidence rating."
       />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">
           <AskPanel examples={s?.examples || []} initialQuestion={sp.get("q") || undefined} />
         </div>

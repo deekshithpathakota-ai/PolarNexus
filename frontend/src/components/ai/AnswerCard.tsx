@@ -57,7 +57,8 @@ const STRENGTH_STYLE: Record<string, string> = {
 export function StrengthPill({ res }: { res: AskResponse }) {
   if (!res.evidence_strength) return <EvidencePill status={res.evidence_status} label={res.evidence_label} />;
   const s = res.evidence_strength;
-  const label = { strong: "Strong evidence", moderate: "Moderate evidence", limited: "Limited evidence", insufficient: "Insufficient evidence" }[s];
+  // keep the established labels ("Strong repository evidence" …); "moderate" is the only new level
+  const label = s === "moderate" ? "Moderate repository evidence" : res.evidence_label;
   return (
     <span title={res.evidence_strength_label} className={clsx("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium", STRENGTH_STYLE[s])}>
       {s === "strong" || s === "moderate" ? <ShieldCheck className="h-3.5 w-3.5" aria-hidden /> : <CircleAlert className="h-3.5 w-3.5" aria-hidden />}

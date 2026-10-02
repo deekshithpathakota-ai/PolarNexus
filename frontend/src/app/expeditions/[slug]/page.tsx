@@ -36,7 +36,7 @@ export default function ExpeditionDetail() {
           <ResourceActions itemType="expedition" slug={e.slug} label={e.name} />
         </div>
       </header>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-6">
           <Card className="p-6">
             <h2 className="mb-3 font-mono text-[11px] uppercase tracking-wider text-steel">Highlights</h2>

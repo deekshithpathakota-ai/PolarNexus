@@ -47,7 +47,7 @@ export default function DatasetPage() {
           <StoryButton type="dataset" slug={ds.slug} />
         </div>
       </header>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-6">
           <Card className="p-5">
             <ErrorBoundary label="dataset explorer">

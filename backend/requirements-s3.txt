@@ -1,0 +1,2 @@
+# Optional: S3-compatible object storage (STORAGE_BACKEND=s3). Not needed for local development.
+boto3>=1.34

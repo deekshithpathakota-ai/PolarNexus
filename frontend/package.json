@@ -9,7 +9,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "e2e": "node e2e/demo-flow.mjs",
-    "e2e:journey": "node e2e/sih-journey.mjs"
+    "e2e:journey": "node e2e/sih-journey.mjs",
+    "e2e:v3": "node e2e/v3-journey.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

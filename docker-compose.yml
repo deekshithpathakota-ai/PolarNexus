@@ -20,6 +20,11 @@ services:
       DEMO_MODE: "true"
       CORS_ORIGINS: http://localhost:3000
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      VISUAL_SEARCH_PROVIDER: ${VISUAL_SEARCH_PROVIDER:-auto}
+    volumes: [storage:/app/storage, models:/app/.model_cache]
     depends_on:
       db: { condition: service_healthy }
     ports: ["8000:8000"]
@@ -32,3 +37,5 @@ services:
     ports: ["3000:3000"]
 volumes:
   pgdata:
+  storage:
+  models:

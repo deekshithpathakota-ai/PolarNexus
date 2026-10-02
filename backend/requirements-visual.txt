@@ -1,0 +1,4 @@
+# Optional: visual semantic search (text → image / video-frame retrieval with CLIP ViT-B/32).
+# ONNX Runtime only — no PyTorch, CPU is enough. Models (~350 MB) are downloaded once into VISUAL_MODEL_CACHE.
+# Without this package the API reports visual search as unavailable and keeps metadata/transcript search.
+fastembed==0.8.1

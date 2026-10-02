@@ -41,7 +41,7 @@ export default function ActivityDetail() {
           <div className="mt-5"><OutreachButton type="activity" slug={a.slug} variant="primary" size="sm" /></div>
         </div>
       </div>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <Card className="p-6">
             <h2 className="mb-2 font-mono text-[11px] uppercase tracking-wider text-steel">About this activity</h2>

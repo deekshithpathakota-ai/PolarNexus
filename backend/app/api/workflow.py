@@ -297,6 +297,23 @@ TRANSLATE_SYSTEM = ("Translate the user's outreach text into {lang}. Translate O
                     "formatting, and keep scientific names. Return only the translation.")
 
 
+def translation_problems(src: str, out: str) -> list[str]:
+    """A machine translation is kept only if every citation marker, number and unit survives unchanged."""
+    import re as _re
+
+    problems = []
+    if sorted(_re.findall(r"\[\d+\]", out)) != sorted(_re.findall(r"\[\d+\]", src)):
+        problems.append("citation markers changed")
+    strip = lambda t: _re.sub(r"\[\d+\]", " ", t)  # noqa: E731
+    nums = lambda t: sorted(n.replace(",", "") for n in _re.findall(r"\d+(?:[.,]\d+)*", strip(t)))  # noqa: E731
+    if nums(out) != nums(src):
+        problems.append("numbers changed")
+    units = lambda t: sorted(_re.findall(r"°C|°|km²|km2|%|ppm|hPa|PSU|m/s", t))  # noqa: E731
+    if units(out) != units(src):
+        problems.append("units changed")
+    return problems
+
+
 @router.post("/content/{cid}/translate")
 def translate(cid: int, body: TranslateRequest, db: Session = Depends(get_db),
               user: User = Depends(require_permission("generate_content"))):
@@ -314,11 +331,11 @@ def translate(cid: int, body: TranslateRequest, db: Session = Depends(get_db),
     if llm:
         try:
             out = llm.complete(TRANSLATE_SYSTEM.format(lang=body.language), src.body, max_tokens=1200, temperature=0.1)
-            import re as _re
-            if sorted(_re.findall(r"\[\d+\]", out)) == sorted(_re.findall(r"\[\d+\]", src.body)):
-                mode, new_body, note = "llm-translation", out, "machine translation — citation markers verified"
+            problems = translation_problems(src.body, out)
+            if not problems:
+                mode, new_body, note = "llm-translation", out, "machine translation — citations, numbers and units verified"
             else:
-                note = "machine translation discarded: citation markers changed"
+                note = "machine translation discarded: " + "; ".join(problems)
         except LLMUnavailable:
             note = "language model unavailable — awaiting human translation"
     if mode == "manual":
