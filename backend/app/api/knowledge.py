@@ -121,7 +121,14 @@ def _get_or_404(db: Session, model, slug: str, label: str):
 def list_resources(params: dict = Depends(_common), kind: str | None = Query(None, pattern="^(document|dataset|media|expedition|station|researcher|activity|topic|content)$"),
                    db: Session = Depends(get_db), user: User | None = Depends(get_current_user_optional)):
     restrict = {kind} if kind else None
-    return _list(db, user, restrict, **params)
+    res = _list(db, user, restrict, **params)
+    if params["q"] and not kind:  # unified Explore search: record it (with measured server time) for analytics
+        from app.models import SearchLog
+        db.add(SearchLog(user_id=user.id if user else None, query=params["q"][:500], mode=params["mode"],
+                         filters=res["filters"], result_count=res["total"], duration_ms=res["took_ms"]))
+        track(db, "search", meta={"query": params["q"][:200]}, user=user, commit=False)
+        db.commit()
+    return res
 
 
 @router.get("/resources/{slug}")

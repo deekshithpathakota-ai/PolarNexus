@@ -95,6 +95,15 @@ frontend/src/
 | **Outreach Feed** | Public page of published, editor-approved content with sources |
 | **Researcher Workspace** | Real file upload (PDF/TXT/MD) with live 9-step pipeline progress |
 | **Admin** | Dashboard KPIs and charts; repository management (add, edit metadata, archive, restore, delete, re-index); users and roles (RBAC, activate/deactivate); analytics; audit logs (filter/search/paginate); system health; demo reset |
+| **Institutional Activities** *(v2)* | 13 activity types (workshops, seminars, conferences, exhibitions, school outreach, lectures, campaigns, expedition briefings, announcements, training, events, achievements); list with search, filters (type, year, organisation, location, topic, verification, status) and sorting; detail pages linked to researchers, expeditions, stations, documents, datasets, media and topics; admin create / edit / feature / archive / restore / delete, all audit-logged |
+| **Media ingestion** *(v2)* | Upload JPG/PNG/WEBP/TIFF (≤ 20 MB) and MP4/MOV/WEBM (≤ 200 MB), streamed to disk; extension + magic-byte + MIME + Pillow-decode validation; EXIF (camera, capture time, GPS → map position); thumbnails; video metadata, poster frame and audio via ffmpeg; transcript from an uploaded .vtt/.srt/.txt or speech-to-text when an API key is set; background processing with live status (Processing → Extracting metadata → Generating transcript → Indexing → Ready / Failed + Retry); indexed into the same hybrid search |
+| **Provenance & verification** *(v2)* | One provenance record per resource (source organisation/type/URL, identifier, licence, publication/collection/import dates, verification status, verifier, data quality, notes); "Data Provenance" panel on every detail page; 7 verification states; Verified / Official / Partner / Uploaded / Pending / Demo / Synthetic filters; admin Provenance & Verification Centre. **Demo and synthetic records cannot be marked Verified or Partner — enforced by the API** |
+| **Unified multimodal search** *(v2)* | One search across documents, datasets, images, videos, expeditions, stations, researchers, institutional activities, topics and published outreach; per-type result counts; new filters (verification, organisation, researcher, activity type) alongside every existing one; existing keyword / semantic / hybrid + RRF ranking unchanged |
+| **Cross-modal AI synthesis** *(v2)* | Answers group "Related Knowledge" by type (documents, datasets, expeditions, stations, media, researchers, activities); compound questions ("How has X changed **and which expeditions** studied it?") answer the first part from passages and append the connected entities, each cited to its own record; citation validation and insufficient-evidence refusal unchanged; activities, topics and AI-generated outreach are searchable but never used as evidence |
+| **Research → Outreach** *(v2)* | "Turn Research Into Outreach" on document, dataset, expedition, station, researcher, activity, topic pages and from any AI answer (its cited passages); 10 content types and 6 audiences; workflow stepper; `evidence_checked` state; per-claim evidence ("[Document, p. 12]") with ⚠ Unsupported claim + Remove; channels shown as **Website LIVE / LinkedIn · Instagram · Newsletter CONNECTOR READY (prototype simulation)**; public detail page per published item; translation drafts (Hindi/Telugu) that always require human review |
+| **Knowledge Timeline** *(v2)* | Chronological, clickable record view for any topic, expedition, station or researcher, filterable by year range and resource type; on topic/expedition/station/researcher pages and at `/timeline` |
+| **Impact & KPIs** *(v2)* | `/impact`: resources by type and verification, AI usage (grounded vs insufficient, citation validation rate on live answers), content workflow counts, discovery, **measured** search/AI latency (live requests only), qualitative before/after table. Labelled "Prototype Demonstration Metrics" |
+| **Graph, map, i18n** *(v2)* | Graph includes activities, topics and published outreach (click to open); map adds media and activity layers with verification in the popup; English/Hindi/Telugu navigation switch (English default; content is never machine-translated outside the reviewed workflow) |
 | **Platform** | RBAC on every endpoint; audit logging; notifications; saved items and search history ("My Knowledge"); loading, empty and error states everywhere; error boundaries; 404 page; responsive layout with mobile bottom nav |
 
 ---
@@ -160,7 +169,9 @@ Tables: `users, roles, documents, document_chunks (embedding vector), embedding_
 python -m app.seed.seed_demo_data            # drop + recreate + seed (≈10 s)
 python -m app.seed.seed_demo_data --if-empty # seed only if there are no users
 ```
-Seed contents: 32 documents (one fully connected flagship: *Antarctic Sea Ice Variability Study*), 16 datasets / 2,514 synthetic records, 43 media, 16 expeditions, 9 stations/locations, 16 researchers, 24 topics, 307 typed relationships, 9 outreach items across all workflow states (generated by the real generator), 90 days of demo analytics, audit history, notifications and saved items. Admins can also reset from **System Health → Reset & reseed**.
+v2 adds `institutional_activities`, `provenance` and `schema_migrations`, plus ingestion columns on `media`, `audience/language/translated_from` on `generated_content`, `page` on `citations` and `duration_ms` on `searches`/`ai_queries`. **Existing databases are upgraded in place on start-up** (columns added, demo activities and provenance rows added, nothing dropped or reset).
+
+Seed contents: 14 institutional activities, a provenance record for every resource, 32 documents (one fully connected flagship: *Antarctic Sea Ice Variability Study*), 16 datasets / 2,514 synthetic records, 43 media, 16 expeditions, 9 stations/locations, 16 researchers, 24 topics, 307 typed relationships, 9 outreach items across all workflow states (generated by the real generator), 90 days of demo analytics, audit history, notifications and saved items. Admins can also reset from **System Health → Reset & reseed**.
 
 ---
 
@@ -199,7 +210,7 @@ Signed-in demo users can switch roles instantly from the user menu (top right).
 4. Click **Ask PolarNexus AI** and ask *"Explain the key factors discussed in this resource."*
 5. Show the **evidence status**, then click citation chips to open the exact source passages.
 6. (Optional) **AI Summaries → Student-Friendly**; ask *"Who won the cricket world cup?"* on /assistant to show **insufficient evidence**.
-7. Sign in as **Researcher**, then click **Generate Outreach Content**.
+7. Sign in as **Researcher**, then click **Turn Research Into Outreach**.
 8. Choose **Student**, then **Generate draft**.
 9. Show the draft, the **Sources** panel and the **Evidence check**.
 10. **Submit for review**.
@@ -207,15 +218,28 @@ Signed-in demo users can switch roles instantly from the user menu (top right).
 12. **Approve**, then **Publish / Disseminate** (website + LinkedIn — social is simulated).
 13. Open the **Outreach Feed** to show the published item with its sources, then sign in as **Admin** and show **Dashboard / Analytics / Audit Logs**.
 
+**v2 additions (≈2 more minutes)**
+
+14. On the resource page, point to the **Data Provenance** panel ("Demo data" — never presented as official); open **Maitri** to show an *Official · verified* station fact record.
+15. On **/assistant** ask *"How has Antarctic sea ice changed and which expeditions studied it?"* — a cited synthesis plus the connected expeditions and **Related Knowledge** grouped by type.
+16. Open **Institutional Activities** → *Teaching Antarctic Sea Ice* workshop: linked research, people, media, graph.
+17. Open **Topics → Sea Ice** (or **/timeline**) for the **Knowledge Timeline**.
+18. **Researcher Workspace → Image / Video**: upload a photo and watch the pipeline reach *Ready*; find it in search.
+19. **Impact & KPIs**: labelled demonstration metrics, measured latencies, before/after workflow table.
+20. As Admin, **Provenance & Verification**: try to mark a synthetic dataset Verified — the API refuses.
+
 ---
 
 ## Testing
 
 ```bash
-cd backend && pip install -r requirements-dev.txt && pytest -q          # 13 API tests
+cd backend && pip install -r requirements-dev.txt && pytest -q          # 34 API tests (13 original + 21 v2)
 cd frontend && npm run typecheck && npm run lint && npm run build
-cd frontend && npx playwright install chromium && BASE_URL=http://localhost:3000 npm run e2e
+cd frontend && npx playwright install chromium
+BASE_URL=http://localhost:3000 npm run e2e            # original demo flow + 25-route smoke + mobile checks
+BASE_URL=http://localhost:3000 npm run e2e:journey    # v2 lifecycle journey + new pages + mobile checks
 ```
+`tests/test_v2.py` covers institutional activities (CRUD, filters, RBAC, audit), image ingestion (EXIF/GPS, thumbnail, search), upload validation (type, signature, decode, MIME mismatch, size, path traversal), video ingestion with a transcript (when ffmpeg is installed), provenance labels and the demo-cannot-be-verified guard, verification filters, unified search across every type, topic pages and the timeline, cross-modal AI synthesis, grounding/refusal, the full outreach workflow (evidence check, review, approval, rejection, publishing state, simulated channels), translation drafts, the impact dashboard, graph/map layers, RBAC on new admin APIs, login throttling and the additive migration on a v1-shaped schema.
 The backend tests cover search and filters, internal-document visibility, RAG citations, insufficient evidence, document-scoped questions, RBAC, the full draft → review → publish workflow, request-changes validation, evidence-check flags, and real PDF ingestion with upload rejections. The e2e script walks the whole demo flow, smoke-tests 25 routes, and checks 10 pages for horizontal overflow at 390 px.
 
 Verified during development: tests pass on PostgreSQL 16 + pgvector **and** on SQLite (no pgvector); the LLM path was tested against a mock OpenAI-compatible server (a fabricated `[9]` citation was stripped); an unreachable LLM falls back to extractive answers and keyword search with visible notices; the e2e suite passes against the production build (`next start`) with 0 console errors.
@@ -231,7 +255,10 @@ Verified during development: tests pass on PostgreSQL 16 + pgvector **and** on S
 | Offline semantic embeddings (TF-IDF + LSA) — real vectors stored in pgvector | Dataset values are **synthetic** (seasonal cycles + noise) |
 | Outreach generation (LLM, or template assembly from source sentences) | Media images are **original generated SVG artwork**; video "playback" is a preview |
 | Evidence check (lexical support, numbers, citation integrity, overclaiming, region scope) | The evidence check is a **heuristic**, not scientific verification (stated in the UI) |
-| Review workflow, RBAC, audit log, notifications, ingestion of PDF/TXT/MD | Publishing to LinkedIn/Instagram/newsletter is **simulated**; website publishing (Outreach Feed) is real |
+| Review workflow, RBAC, audit log, notifications, ingestion of PDF/TXT/MD | Publishing to LinkedIn/Instagram/newsletter is **simulated** ("connector ready"); website publishing (Outreach Feed) is real |
+| Image/video ingestion, EXIF, thumbnails, ffprobe metadata, transcript indexing | Speech-to-text runs only with an API key; otherwise speech is searchable only from an attached transcript (stated in the UI) |
+| Provenance records, verification workflow, demo/synthetic guard | Institutional activities are demonstration records (fictional "(demo)" organisers, generic venues) |
+| Timeline and impact metrics computed from the database; latency measured on live requests | Hindi/Telugu cover the navigation only and are a prototype translation pending native-speaker review |
 | Analytics computed from DB events | Historical analytics are seeded demo activity (labelled "Prototype Demonstration Analytics") |
 
 ---
@@ -239,11 +266,14 @@ Verified during development: tests pass on PostgreSQL 16 + pgvector **and** on S
 ## Known limitations
 
 - **No live deployment from this build environment**: deployment configs are included and the production build was tested locally, but the Vercel/Render URLs must be created from your accounts.
-- OCR for scanned PDFs is not enabled (such uploads fail with a clear message). Upload of datasets (CSV/JSON) and media files through the UI is not wired; datasets and media are managed as metadata records.
+- OCR for scanned PDFs is not enabled (such uploads fail with a clear message). Dataset (CSV/JSON) upload is not wired; datasets are managed as metadata records. Image and video upload **is** wired (Researcher Workspace → Image / Video).
+- Video processing needs `ffmpeg`/`ffprobe` on the API host (installed by the Dockerfile; on Render's native Python runtime it is usually absent — those steps are then shown as skipped). Speech-to-text needs `OPENAI_API_KEY`.
+- Uploaded media files are served by the API. Browsers load them without the auth header, so internal-visibility uploads are viewable by their uploader only through the API, not inline.
 - Uploaded files are stored on local disk; on free hosting tiers they are lost on restart (extracted text and index remain in the database). S3/Supabase storage is configured in env but not implemented.
 - Institutional SSO is not implemented (JWT accounts only). The JWT is stored in `localStorage`; production should use httpOnly cookies.
 - Offline LSA embeddings capture co-occurrence, not deep meaning. Configure an embedding API for production-quality semantic search, then **Admin → Repository → Rebuild index**.
-- Multilingual explanations are not implemented (the language filter exists; the corpus is English).
+- Multilingual support is a foundation: the navigation shell switches to Hindi/Telugu and outreach can be drafted as a translation (machine-translated only with an LLM, citation markers verified; always human-reviewed). Page content and the corpus remain English.
+- Schema changes use an additive start-up migrator (`app/core/migrations.py`, recorded in `schema_migrations`), not Alembic. It only adds tables/columns and runs idempotent backfills.
 
 ---
 
@@ -257,4 +287,8 @@ Verified during development: tests pass on PostgreSQL 16 + pgvector **and** on S
 | Health shows AI provider `fallback` | No `OPENAI_API_KEY`: expected; answers are extractive or curated demo, and are labelled |
 | Empty repository | Run `python -m app.seed.seed_demo_data` or use Admin → System Health → Reset & reseed |
 | Upload rejected | Only PDF/TXT/MD ≤ 25 MB; PDFs must have a real `%PDF` signature and extractable text |
+| Media upload rejected | Images JPG/PNG/WEBP/TIFF ≤ 20 MB, videos MP4/MOV/WEBM ≤ 200 MB; the file content must match its extension and decode |
+| Video shows "skipped: ffmpeg not installed" | Install ffmpeg on the API host (the Dockerfile does) and use **Retry processing** |
+| `RuntimeError: JWT_SECRET must be set` | `ENVIRONMENT=production` refuses the default secret — set a long random `JWT_SECRET` |
+| HTTP 429 on sign-in | 10 failed attempts per IP+email within 5 min; wait, or tune `LOGIN_MAX_FAILURES` |
 | CORS errors (only with `NEXT_PUBLIC_API_URL`) | Add the frontend origin to `CORS_ORIGINS`, or leave `NEXT_PUBLIC_API_URL` empty to use the proxy |
