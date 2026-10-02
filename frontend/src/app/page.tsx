@@ -5,9 +5,12 @@ import {
   BookOpen,
   Bot,
   Building2,
+  CalendarDays,
   ClipboardCheck,
+  Fingerprint,
+  History,
+  TrendingUp,
   Database,
-  GraduationCap,
   Image as ImageIcon,
   Megaphone,
   Search,
@@ -18,24 +21,26 @@ import {
 import Link from "next/link";
 import { PolarScene } from "@/components/art/PolarScene";
 import { ResourceCard } from "@/components/cards/ResourceCard";
+import { ActivityCard } from "@/components/cards/ActivityCard";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { CardSkeleton, DemoBadge, ErrorState, LinkButton, SectionTitle, Skeleton } from "@/components/common/ui";
 import { Globe } from "@/components/maps/Globe";
 import { SearchBox } from "@/components/search/SearchBox";
 import { BRAND, fmtNum } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
-import type { SearchResponse } from "@/lib/types";
+import type { Activity, SearchResponse } from "@/lib/types";
 
-interface Stats { documents: number; datasets: number; expeditions: number; stations: number; media: number; topics: number; researchers: number; dataset_records: number; label: string }
+interface Stats { documents: number; datasets: number; expeditions: number; stations: number; media: number; topics: number; researchers: number; dataset_records: number; activities?: number; label: string }
 
 const PIPELINE = [
-  { icon: BookOpen, label: "Research", text: "Reports, papers, datasets, media" },
-  { icon: Search, label: "Search", text: "Hybrid keyword + semantic" },
-  { icon: Bot, label: "AI", text: "Evidence-grounded answers" },
-  { icon: GraduationCap, label: "Education", text: "Learning paths & quizzes" },
-  { icon: SquarePen, label: "Outreach", text: "Drafts for every audience" },
-  { icon: ClipboardCheck, label: "Review", text: "Humans approve" },
-  { icon: Megaphone, label: "Dissemination", text: "Web & social channels" },
+  { icon: BookOpen, label: "Research & ingestion", text: "Papers, datasets, images, videos, activities" },
+  { icon: Fingerprint, label: "Provenance", text: "Source, licence and verification on every record" },
+  { icon: Search, label: "Discovery", text: "Hybrid search across every resource type" },
+  { icon: Bot, label: "Grounded AI", text: "Cited answers — or “insufficient evidence”" },
+  { icon: SquarePen, label: "Outreach", text: "Drafts for every audience, evidence-checked" },
+  { icon: ClipboardCheck, label: "Human review", text: "Editors approve before anything is public" },
+  { icon: Megaphone, label: "Dissemination", text: "Live website feed; social connectors ready" },
+  { icon: TrendingUp, label: "Impact", text: "Measured usage and workflow metrics" },
 ];
 
 const AREAS = [
@@ -44,6 +49,8 @@ const AREAS = [
   { href: "/expeditions", icon: Ship, title: "Expeditions", text: "Explore India's polar expedition history." },
   { href: "/media", icon: ImageIcon, title: "Media", text: "Discover photographs, videos and visual stories." },
   { href: "/stations", icon: Building2, title: "Stations", text: "Explore polar research stations." },
+  { href: "/activities", icon: CalendarDays, title: "Institutional Activities", text: "Workshops, outreach, briefings and announcements." },
+  { href: "/timeline", icon: History, title: "Knowledge Timeline", text: "See how knowledge on a topic built up over time." },
   { href: "/assistant", icon: Bot, title: "AI Knowledge Assistant", text: "Ask questions and receive evidence-grounded answers." },
 ];
 
@@ -57,6 +64,7 @@ const REGIONS = [
 export default function Home() {
   const stats = useApi<Stats>("/api/stats");
   const featured = useApi<SearchResponse>("/api/resources", { kind: "document", sort: "views", page_size: 6 });
+  const activities = useApi<{ results: Activity[] }>("/api/activities", { sort: "upcoming", page_size: 3 });
 
   const statItems = stats.data
     ? [
@@ -67,6 +75,7 @@ export default function Home() {
         [stats.data.stations, "Stations & locations"],
         [stats.data.media, "Media assets"],
         [stats.data.topics, "Scientific topics"],
+        ...(stats.data.activities ? [[stats.data.activities, "Institutional activities"]] : []),
       ]
     : [];
 
@@ -216,6 +225,17 @@ export default function Home() {
             </div>
           )}
         </section>
+
+        {/* ------------------------------------------------------------ INSTITUTIONAL ACTIVITIES */}
+        {activities.data && activities.data.results.length > 0 && (
+          <section>
+            <SectionTitle eyebrow="Institutional activities" title="Workshops, outreach & events"
+              action={<LinkButton href="/activities" variant="secondary" size="sm">All activities <ArrowRight className="h-3.5 w-3.5" /></LinkButton>} />
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {activities.data.results.map((a) => <ActivityCard key={a.id} a={a} />)}
+            </div>
+          </section>
+        )}
 
         {/* ------------------------------------------------------------ POLAR EXPLORATION */}
         <section>

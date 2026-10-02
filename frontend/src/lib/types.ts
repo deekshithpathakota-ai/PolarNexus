@@ -1,4 +1,28 @@
-export type ResourceType = "document" | "dataset" | "media" | "expedition" | "station" | "researcher" | "topic";
+export type ResourceType = "document" | "dataset" | "media" | "expedition" | "station" | "researcher" | "topic" | "activity" | "content";
+
+export type VerificationStatus =
+  | "verified" | "partner_source" | "user_uploaded" | "pending_review" | "demo_data" | "synthetic_demo" | "unverified";
+
+export interface Provenance {
+  source_organisation: string;
+  source_type: string;
+  source_url: string;
+  original_identifier: string;
+  license: string;
+  publication_date: string | null;
+  collection_date: string | null;
+  imported_at: string | null;
+  last_verified_at: string | null;
+  verification_status: VerificationStatus;
+  verification_label: string;
+  verification_description: string;
+  verified_by: string;
+  data_quality: string;
+  provenance_notes: string;
+  is_demo: boolean;
+  official: boolean;
+  notice: string;
+}
 export type Role = "public" | "researcher" | "editor" | "admin";
 
 export interface User {
@@ -32,6 +56,10 @@ export interface Card {
   status?: string;
   extra: Record<string, unknown>;
   relation?: string;
+  organisation?: string;
+  verification?: VerificationStatus;
+  verification_label?: string;
+  official?: boolean;
 }
 
 export interface SearchResult extends Card {
@@ -50,6 +78,9 @@ export interface Facets {
   topics: Record<string, number>;
   year_min: number | null;
   year_max: number | null;
+  resource_groups?: Record<string, number>;
+  verification?: Record<string, number>;
+  organisations?: Record<string, number>;
 }
 
 export interface SearchResponse {
@@ -104,6 +135,7 @@ export interface DocumentDetail {
   topics: TopicRef[];
   related: Related;
   citation: string;
+  provenance?: Provenance;
 }
 
 export interface Variable {
@@ -136,6 +168,8 @@ export interface DatasetDetail {
   updated_at: string;
   topics: TopicRef[];
   related: Related;
+  provenance?: Provenance;
+  quality?: { records: number; variables: { name: string; unit: string; completeness: number | null }[]; georeferenced: number | null; note: string };
 }
 
 export interface SeriesResponse {
@@ -166,6 +200,71 @@ export interface MediaItem {
   views: number;
   topics?: TopicRef[];
   related?: Related;
+  provenance?: Provenance;
+  status?: string;
+  filename?: string;
+  mime_type?: string;
+  size_bytes?: number;
+  duration_seconds?: number | null;
+  width?: number | null;
+  height?: number | null;
+  captured_at?: string | null;
+  uploaded_at?: string | null;
+  location?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  exif?: Record<string, unknown>;
+  has_file?: boolean;
+  file_url?: string | null;
+  thumbnail_url?: string | null;
+  transcript?: string;
+  transcript_source?: string;
+  processing_status?: string;
+  processing_steps?: ProcessingStep[];
+  processing_error?: string;
+  uploaded_by?: number | null;
+}
+
+export interface ProcessingStep {
+  key: string;
+  label: string;
+  status: "pending" | "running" | "done" | "skipped" | "failed";
+  detail: string;
+}
+
+export interface Activity {
+  type: "activity";
+  id: number;
+  slug: string;
+  title: string;
+  description: string;
+  activity_type: string;
+  activity_type_label: string;
+  date: string | null;
+  end_date: string | null;
+  year: number | null;
+  location: string;
+  latitude: number | null;
+  longitude: number | null;
+  region: string;
+  organisation: string;
+  department: string;
+  audience: string;
+  outcomes: string[];
+  status: string;
+  visibility: string;
+  featured: boolean;
+  cover_scene: string;
+  is_demo: boolean;
+  views: number;
+  url: string;
+  topics?: TopicRef[] | string[];
+  topic_slugs?: string[];
+  related?: Related;
+  related_count?: number;
+  provenance?: Provenance;
+  verification?: VerificationStatus;
+  verification_label?: string;
 }
 
 export interface Expedition {
@@ -191,6 +290,7 @@ export interface Expedition {
   views: number;
   topics?: TopicRef[];
   related?: Related;
+  provenance?: Provenance;
 }
 
 export interface Station {
@@ -214,6 +314,7 @@ export interface Station {
   counts?: Record<string, number>;
   topics?: TopicRef[];
   related?: Related;
+  provenance?: Provenance;
 }
 
 export interface Researcher {
@@ -228,6 +329,7 @@ export interface Researcher {
   is_demo: boolean;
   topics?: TopicRef[];
   related?: Related;
+  provenance?: Provenance;
 }
 
 export interface Source {
@@ -261,6 +363,8 @@ export interface AskResponse {
   suggestions?: string[];
   retrieval: { mode: string; passages_considered: number; passages_used: number };
   query_id: number;
+  related_groups?: Record<string, (Pick<Card, "type" | "id" | "slug" | "title" | "kind" | "region" | "year" | "url" | "summary" | "is_demo" | "verification" | "verification_label">)[]>;
+  synthesis?: { compound: boolean; answered_part: string | null; list_type: string | null; evidence_types: string[]; related_types: string[] };
 }
 
 export interface SummaryResponse {
@@ -287,11 +391,19 @@ export interface ContentCitation {
   slug: string;
   label: string;
   section: string;
+  page?: number | null;
   quote: string;
   url: string | null;
 }
 
-export type ContentStatus = "draft" | "under_review" | "changes_requested" | "approved" | "published" | "rejected";
+export type ContentStatus = "draft" | "evidence_checked" | "under_review" | "changes_requested" | "approved" | "published" | "rejected";
+
+export interface ChannelStatus {
+  channel: string;
+  label: string;
+  status: "live" | "connector_ready";
+  note: string;
+}
 
 export interface ContentItem {
   id: number;
@@ -315,6 +427,11 @@ export interface ContentItem {
   published_at: string | null;
   evidence_overall: "pass" | "warn" | "fail" | null;
   excerpt: string;
+  audience?: string;
+  language?: string;
+  translated_from?: number | null;
+  channel_status?: ChannelStatus[];
+  provenance?: Provenance;
   body?: string;
   evidence_check?: EvidenceCheck;
   citations?: ContentCitation[];

@@ -18,9 +18,15 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { Markdown } from "@/components/common/Markdown";
 import { InfoTip, GLOSSARY } from "@/components/common/ui";
+import { TYPE_META } from "@/components/cards/ResourceCard";
 import { post } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { AskResponse } from "@/lib/types";
+
+const GROUP_LABEL: Record<string, string> = {
+  document: "Documents", dataset: "Datasets", expedition: "Expeditions", station: "Stations", media: "Media",
+  researcher: "Researchers", activity: "Activities",
+};
 
 export function EvidencePill({ status, label }: { status: AskResponse["evidence_status"]; label: string }) {
   return (
@@ -83,7 +89,9 @@ export function AnswerCard({ res, onRegenerate, regenerating }: { res: AskRespon
       </div>
 
       <div className="px-5 py-4">
-        <p className="mb-1 font-mono text-[10.5px] uppercase tracking-wider text-steel">Answer</p>
+        <p className="mb-1 font-mono text-[10.5px] uppercase tracking-wider text-steel">
+          {res.synthesis && res.synthesis.evidence_types.length > 1 ? "AI Synthesis · across " + res.synthesis.evidence_types.map((t) => GROUP_LABEL[t] || t).join(", ").toLowerCase() : "Answer"}
+        </p>
         <Markdown text={res.answer} onCite={openCite} citeTitle={(n) => res.sources.find((s) => s.n === n)?.title} />
         {res.notice && <p className="mt-3 rounded-lg bg-[#fbf1df] px-3 py-2 text-[13px] text-[#7a520b]">{res.notice}</p>}
         {res.mode === "curated_demo" && (
@@ -140,7 +148,29 @@ export function AnswerCard({ res, onRegenerate, regenerating }: { res: AskRespon
         </div>
       )}
 
-      {res.related.length > 0 && (
+      {res.related_groups && Object.keys(res.related_groups).length > 0 ? (
+        <div className="border-t border-frost px-5 py-4">
+          <p className="mb-2 font-mono text-[10.5px] uppercase tracking-wider text-steel">Related knowledge</p>
+          <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+            {Object.entries(res.related_groups).map(([type, items]) => {
+              const I = (TYPE_META[type] || TYPE_META.document).icon;
+              return (
+                <div key={type}>
+                  <p className="mb-1 flex items-center gap-1.5 text-[12.5px] font-medium text-night"><I className="h-3.5 w-3.5 text-cyan-deep" aria-hidden /> → {GROUP_LABEL[type] || type}</p>
+                  <ul className="space-y-0.5">
+                    {items.slice(0, 4).map((r) => (
+                      <li key={`${r.type}${r.id}`} className="truncate text-[13px]">
+                        <Link href={r.url} className="text-deep hover:text-cyan-deep hover:underline">{r.title}</Link>
+                        {r.is_demo && <span className="text-mist"> · demo</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : res.related.length > 0 && (
         <div className="border-t border-frost px-5 py-4">
           <p className="mb-2 font-mono text-[10.5px] uppercase tracking-wider text-steel">Related knowledge</p>
           <div className="flex flex-wrap gap-2">
@@ -176,10 +206,11 @@ export function AnswerCard({ res, onRegenerate, regenerating }: { res: AskRespon
         )}
         {!insufficient && firstDoc && can("generate_content") && (
           <Link
-            href={`/studio?type=document&slug=${firstDoc.slug}`}
+            href={`/studio?type=chunks&ids=${res.sources.map((s) => s.chunk_id).join(",")}`}
             className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px] text-ink-soft hover:bg-ice"
+            title="Create an outreach draft from exactly the passages cited in this answer"
           >
-            <SquarePen className="h-3.5 w-3.5" /> Create outreach content
+            <SquarePen className="h-3.5 w-3.5" /> Turn this answer into outreach
           </Link>
         )}
         <span className="ml-auto flex items-center gap-1">

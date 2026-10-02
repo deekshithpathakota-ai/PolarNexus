@@ -30,7 +30,7 @@ export default function OutreachPage() {
                 <span className="ml-auto inline-flex items-center gap-1 text-[12px] text-teal"><ShieldCheck className="h-3.5 w-3.5" /> Reviewed by {c.reviewer || "editor"}</span>
               </div>
               <div className="px-6 py-5">
-                <h2 className="mb-2 text-[24px] leading-tight text-night">{c.title}</h2>
+                <h2 className="mb-2 text-[24px] leading-tight text-night"><Link href={`/outreach/${c.id}`} className="hover:text-cyan-deep">{c.title}</Link></h2>
                 <Markdown text={c.body || ""} onCite={(n) => document.getElementById(`c${c.id}-${n}`)?.scrollIntoView({ behavior: "smooth", block: "center" })} />
               </div>
               <footer className="border-t border-frost px-6 py-4">

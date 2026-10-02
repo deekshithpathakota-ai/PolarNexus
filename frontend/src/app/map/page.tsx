@@ -10,12 +10,15 @@ import { Container } from "@/components/layout/AppShell";
 import { inView, PolarMap, type MapPoint, type MapView } from "@/components/maps/PolarMap";
 import { coord } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
-import type { Expedition, Station } from "@/lib/types";
+import type { Expedition, Station, VerificationStatus } from "@/lib/types";
+import { VerificationBadge } from "@/components/provenance/Provenance";
 
 interface MapData {
   stations: (Omit<Station, "topics"> & { topics: string[]; counts: Record<string, number> })[];
   expeditions: (Omit<Expedition, "topics"> & { topics: string[] })[];
-  datasets: { slug: string; title: string; region: string; latitude: number; longitude: number; url: string; data_type: string; topics: string[] }[];
+  datasets: { slug: string; title: string; region: string; latitude: number; longitude: number; url: string; data_type: string; topics: string[]; verification_label?: string; related_count?: number }[];
+  media?: { slug: string; title: string; media_type: string; region: string; latitude: number; longitude: number; url: string; topics: string[]; verification: VerificationStatus; verification_label: string }[];
+  activities?: { slug: string; title: string; kind: string; region: string; latitude: number; longitude: number; url: string; topics: string[]; date: string | null; status: string; verification: VerificationStatus; verification_label: string }[];
   topics: string[];
 }
 
@@ -33,7 +36,7 @@ function StaticFallback({ points }: { points: MapPoint[] }) {
 export default function MapPage() {
   const { data, error, loading, reload } = useApi<MapData>("/api/map");
   const [view, setView] = useState<MapView>("antarctic");
-  const [layers, setLayers] = useState({ station: true, expedition: true, dataset: true });
+  const [layers, setLayers] = useState({ station: true, expedition: true, dataset: true, media: false, activity: true });
   const [topic, setTopic] = useState("");
   const [sel, setSel] = useState<string | null>(null);
 
@@ -44,6 +47,8 @@ export default function MapPage() {
       ...(layers.station ? data.stations.filter((s) => t(s.topics)).map((s) => ({ key: `station:${s.slug}`, kind: "station" as const, name: s.name, lat: s.latitude, lon: s.longitude, subtitle: s.kind, verified: s.verified })) : []),
       ...(layers.expedition ? data.expeditions.filter((e) => t(e.topics) && e.latitude != null).map((e) => ({ key: `expedition:${e.slug}`, kind: "expedition" as const, name: e.name, lat: e.latitude!, lon: e.longitude!, subtitle: e.season })) : []),
       ...(layers.dataset ? data.datasets.filter((d) => t(d.topics)).map((d) => ({ key: `dataset:${d.slug}`, kind: "dataset" as const, name: d.title, lat: d.latitude, lon: d.longitude, subtitle: d.data_type })) : []),
+      ...(layers.media ? (data.media || []).filter((d) => t(d.topics)).map((d) => ({ key: `media:${d.slug}`, kind: "media" as const, name: d.title, lat: d.latitude, lon: d.longitude, subtitle: d.media_type })) : []),
+      ...(layers.activity ? (data.activities || []).filter((d) => t(d.topics)).map((d) => ({ key: `activity:${d.slug}`, kind: "activity" as const, name: d.title, lat: d.latitude, lon: d.longitude, subtitle: d.kind })) : []),
     ];
   }, [data, layers, topic]);
 
@@ -58,6 +63,14 @@ export default function MapPage() {
       const e = data.expeditions.find((x) => x.slug === slug)!;
       return { kind, title: e.name, url: `/expeditions/${e.slug}`, lat: e.latitude!, lon: e.longitude!, body: e.objective, meta: `${e.program} · ${e.season}`, tags: e.topics, verified: !e.is_demo };
     }
+    if (kind === "media") {
+      const m = (data.media || []).find((x) => x.slug === slug)!;
+      return { kind, title: m.title, url: m.url, lat: m.latitude, lon: m.longitude, body: `${m.media_type} · ${m.region}`, meta: "Media", tags: m.topics, verified: false, verification: m.verification, vlabel: m.verification_label };
+    }
+    if (kind === "activity") {
+      const a = (data.activities || []).find((x) => x.slug === slug)!;
+      return { kind, title: a.title, url: a.url, lat: a.latitude, lon: a.longitude, body: `${a.kind}${a.date ? ` · ${a.date}` : ""} · ${a.status}`, meta: "Institutional activity", tags: a.topics, verified: false, verification: a.verification, vlabel: a.verification_label };
+    }
     const d = data.datasets.find((x) => x.slug === slug)!;
     return { kind, title: d.title, url: d.url, lat: d.latitude, lon: d.longitude, body: `${d.data_type} dataset · ${d.region}`, meta: "Dataset (synthetic demo values)", tags: d.topics, verified: false };
   }, [sel, data]);
@@ -66,14 +79,14 @@ export default function MapPage() {
 
   return (
     <Container className="max-w-[1400px]">
-      <PageHeader eyebrow="Explore" title="Polar Map" description="Stations, expedition areas and dataset locations on pole-centred projections. Click any marker for its linked knowledge." />
+      <PageHeader eyebrow="Explore" title="Polar Map" description="Stations, expedition areas, dataset locations, georeferenced media and institutional activities on pole-centred projections. Click any marker for its linked knowledge." />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Tabs value={view} onChange={(v) => { setView(v); setSel(null); }} tabs={[{ key: "antarctic", label: "Antarctic" }, { key: "arctic", label: "Arctic" }, { key: "world", label: "World (incl. Himalaya)" }]} />
         <div className="flex flex-wrap gap-1.5">
-          {(["station", "expedition", "dataset"] as const).map((k) => (
+          {(["station", "expedition", "dataset", "media", "activity"] as const).map((k) => (
             <button key={k} aria-pressed={layers[k]} onClick={() => setLayers((l) => ({ ...l, [k]: !l[k] }))}
               className={clsx("rounded-full border px-3 py-1.5 text-[13px] capitalize", layers[k] ? "border-cyan bg-[#e3f4fa] text-cyan-deep" : "border-frost bg-white text-steel")}>
-              {k}s
+              {k === "activity" ? "activities" : k === "media" ? "media" : `${k}s`}
             </button>
           ))}
         </div>
@@ -101,7 +114,7 @@ export default function MapPage() {
                 <h2 className="text-[22px] leading-tight text-night">{selected.title}</h2>
                 <p className="mt-1 text-[13px] text-steel">{selected.meta}</p>
                 <p className="mt-1 font-mono text-[12px] text-steel">{coord(selected.lat, selected.lon)}</p>
-                <div className="mt-2">{selected.verified ? <span className="inline-flex items-center gap-1 text-[12px] text-teal"><BadgeCheck className="h-3.5 w-3.5" /> Published facts</span> : <DemoBadge label="Demo record" />}</div>
+                <div className="mt-2">{"verification" in selected && selected.verification ? <VerificationBadge status={selected.verification} label={selected.vlabel} /> : selected.verified ? <span className="inline-flex items-center gap-1 text-[12px] text-teal"><BadgeCheck className="h-3.5 w-3.5" /> Published facts</span> : <DemoBadge label="Demo record" />}</div>
                 <p className="mt-3 text-[14px] leading-relaxed text-ink-soft">{selected.body}</p>
                 {selected.counts && (
                   <div className="mt-4 grid grid-cols-4 gap-2 rounded-xl bg-snow p-3 text-center">
@@ -118,7 +131,7 @@ export default function MapPage() {
                   {visibleList.map((p) => (
                     <li key={p.key}>
                       <button onClick={() => setSel(p.key)} className="flex w-full items-center gap-3 border-b border-frost/60 px-4 py-2.5 text-left hover:bg-snow">
-                        <span className={clsx("h-2.5 w-2.5 shrink-0", p.kind === "station" ? "rotate-45 bg-aurora" : p.kind === "expedition" ? "rounded-full bg-[#f0b35a]" : "rounded-[2px] bg-[#7fc8ff]")} />
+                        <span className={clsx("h-2.5 w-2.5 shrink-0", p.kind === "station" ? "rotate-45 bg-aurora" : p.kind === "expedition" ? "rounded-full bg-[#f0b35a]" : p.kind === "media" ? "bg-[#c4b5fd] [clip-path:polygon(50%_0,100%_100%,0_100%)]" : p.kind === "activity" ? "bg-[#ff9b85] [clip-path:polygon(25%_0,75%_0,100%_50%,75%_100%,25%_100%,0_50%)]" : "rounded-[2px] bg-[#7fc8ff]")} />
                         <span className="min-w-0"><span className="block truncate text-[13.5px] text-night">{p.name}</span><span className="block text-[11.5px] text-steel">{p.kind} · {p.subtitle}</span></span>
                       </button>
                     </li>

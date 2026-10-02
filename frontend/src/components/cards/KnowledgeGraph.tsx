@@ -10,7 +10,9 @@ interface GEdge { source: string; target: string; relation: string }
 
 const COLORS: Record<string, string> = {
   document: "#1aa3c8", dataset: "#128a87", media: "#7b6cd9", expedition: "#d4952a", station: "#0b1f33", researcher: "#5b7489", topic: "#4fd1a5",
+  activity: "#c4553a", content: "#2f9e6a",
 };
+const LEGEND: Record<string, string> = { content: "outreach", activity: "activity" };
 
 /** Lightweight radial relationship graph (no graph database needed): centre → linked records → second hop. */
 export function KnowledgeGraph({ type, slug }: { type: string; slug: string }) {
@@ -93,11 +95,12 @@ export function KnowledgeGraph({ type, slug }: { type: string; slug: string }) {
         })}
       </svg>
       <div className="flex flex-wrap gap-3 border-t border-frost px-4 py-2 text-[11px] text-steel">
-        {Object.entries(COLORS).map(([k, c]) => (
+        {Object.entries(COLORS).filter(([k]) => data.nodes.some((n) => n.type === k)).map(([k, c]) => (
           <span key={k} className="inline-flex items-center gap-1.5 capitalize">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} /> {k}
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} /> {LEGEND[k] || k}
           </span>
         ))}
+        <span className="ml-auto text-mist">Click a node to open it</span>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { MapPin, SquarePen } from "lucide-react";
+import { MapPin } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { RelatedKnowledge } from "@/components/cards/RelatedKnowledge";
@@ -9,9 +9,10 @@ import { DatasetExplorer } from "@/components/charts/DatasetExplorer";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { BackLink, DetailError, DetailSkeleton, SideCard } from "@/components/common/DetailLayout";
 import { ResourceActions } from "@/components/common/ResourceActions";
-import { Card, DemoBadge, LinkButton, MetaRow } from "@/components/common/ui";
+import { Card, DemoBadge, MetaRow } from "@/components/common/ui";
+import { OutreachButton } from "@/components/outreach/OutreachButton";
+import { ProvenancePanel } from "@/components/provenance/Provenance";
 import { Container } from "@/components/layout/AppShell";
-import { useAuth } from "@/lib/auth";
 import { fmtDate, fmtNum } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
 import type { DatasetDetail } from "@/lib/types";
@@ -19,7 +20,6 @@ import type { DatasetDetail } from "@/lib/types";
 export default function DatasetPage() {
   const { slug } = useParams<{ slug: string }>();
   const { data: ds, error, loading, reload } = useApi<DatasetDetail>(`/api/datasets/${slug}`);
-  const { can } = useAuth();
   if (loading && !ds) return <DetailSkeleton />;
   if (error || !ds) return <DetailError error={error || { message: "Not found", status: 404 }} onRetry={reload} back={{ href: "/datasets", label: "Back to Datasets" }} />;
   return (
@@ -36,7 +36,7 @@ export default function DatasetPage() {
         <div className="mt-5 flex flex-wrap gap-2">
           <ResourceActions itemType="dataset" slug={ds.slug} label={ds.title} download={`/api/datasets/${ds.slug}/download`}
             citation={`${ds.source} (${ds.year}). ${ds.title} [${ds.format}]. ${ds.license}. PolarNexus record /datasets/${ds.slug}.`} />
-          {can("generate_content") && <LinkButton href={`/studio?type=dataset&slug=${ds.slug}`} variant="dark" size="sm" icon={<SquarePen className="h-3.5 w-3.5" />}>Create outreach content</LinkButton>}
+          <OutreachButton type="dataset" slug={ds.slug} size="sm" />
         </div>
       </header>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -49,6 +49,7 @@ export default function DatasetPage() {
           <RelatedKnowledge related={ds.related} graph={{ type: "dataset", slug: ds.slug }} />
         </div>
         <aside className="space-y-4">
+          <ProvenancePanel p={ds.provenance} />
           <SideCard title="Dataset metadata">
             <dl>
               <MetaRow label="Temporal">{fmtDate(ds.temporal_start)} – {fmtDate(ds.temporal_end)}</MetaRow>
@@ -61,9 +62,35 @@ export default function DatasetPage() {
               <MetaRow label="Updated">{fmtDate(ds.updated_at)}</MetaRow>
             </dl>
           </SideCard>
+          {ds.quality && (
+            <SideCard title="Variables, units & completeness">
+              <ul className="space-y-1.5">
+                {ds.quality.variables.map((v) => (
+                  <li key={v.name} className="text-[13px]">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="font-mono text-[12px] text-night">{v.name}</span>
+                      <span className="text-[11.5px] text-steel">{v.unit || "—"}</span>
+                    </div>
+                    {v.completeness !== null && (
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-ice" aria-hidden>
+                          <span className="block h-full rounded-full bg-teal" style={{ width: `${Math.round(v.completeness * 100)}%` }} />
+                        </span>
+                        <span className="w-10 text-right font-mono text-[10.5px] text-steel">{Math.round(v.completeness * 100)}%</span>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-[11.5px] text-steel">
+                {ds.quality.georeferenced !== null && <>Georeferenced records: {Math.round(ds.quality.georeferenced * 100)}%. </>}
+                {ds.quality.note}
+              </p>
+            </SideCard>
+          )}
           <SideCard title="Topics">
             <div className="flex flex-wrap gap-1.5">
-              {ds.topics.map((t) => <Link key={t.slug} href={`/explore?topic=${t.slug}`} className="rounded-full bg-ice px-2.5 py-1 text-[12.5px] text-deep hover:bg-frost">{t.name}</Link>)}
+              {ds.topics.map((t) => <Link key={t.slug} href={`/topics/${t.slug}`} className="rounded-full bg-ice px-2.5 py-1 text-[12.5px] text-deep hover:bg-frost">{t.name}</Link>)}
             </div>
           </SideCard>
         </aside>

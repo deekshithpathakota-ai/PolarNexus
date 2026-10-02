@@ -10,10 +10,16 @@ import type { ContentItem } from "@/lib/types";
 const ICON = { pass: CircleCheck, warn: TriangleAlert, fail: CircleX };
 const COLOR = { pass: "text-teal", warn: "text-amber", fail: "text-coral" };
 
-export function EvidenceCheckView({ item, onRecheck, rechecking }: { item: ContentItem; onRecheck?: () => void; rechecking?: boolean }) {
+export function EvidenceCheckView({ item, onRecheck, rechecking, onRemoveClaim }: {
+  item: ContentItem; onRecheck?: () => void; rechecking?: boolean; onRemoveClaim?: (text: string) => void;
+}) {
   const ec = item.evidence_check;
-  const [showSentences, setShowSentences] = useState(false);
+  const [showSentences, setShowSentences] = useState(() => !!ec?.sentences.some((x) => !x.supported));
   if (!ec) return null;
+  const cite = (n: number | null) => {
+    const c = n ? item.citations?.find((x) => x.n === n) : null;
+    return c ? `${c.label}${c.section ? ` · ${c.section}` : ""}${c.page ? `, p. ${c.page}` : ""}` : null;
+  };
   const OverallIcon = ICON[ec.overall];
   return (
     <div>
@@ -51,10 +57,15 @@ export function EvidenceCheckView({ item, onRecheck, rechecking }: { item: Conte
             <ul className="mt-2 space-y-1.5">
               {ec.sentences.map((s, i) => (
                 <li key={i} className={clsx("rounded-lg border px-2.5 py-1.5 text-[12.5px] leading-relaxed", s.supported ? "border-[#bfe5df] bg-[#f2faf8]" : "border-[#f0dcb4] bg-[#fdf8ee]")}>
+                  {!s.supported && <span className="mb-0.5 flex items-center gap-1 font-mono text-[10.5px] font-semibold uppercase tracking-wide text-[#8a5c0c]"><TriangleAlert className="h-3 w-3" aria-hidden /> Unsupported claim</span>}
                   <span className="text-ink">{s.text}</span>
                   <span className="mt-0.5 block font-mono text-[10.5px] text-steel">
-                    overlap {Math.round(s.support * 100)}%{s.best_source ? ` · best match [${s.best_source}]` : ""}
+                    {s.supported && cite(s.best_source) ? <>Evidence: [{s.best_source}] {cite(s.best_source)} · </> : null}
+                    overlap {Math.round(s.support * 100)}%{!s.supported && s.best_source ? ` · closest [${s.best_source}]` : ""}
                   </span>
+                  {!s.supported && onRemoveClaim && (
+                    <button onClick={() => onRemoveClaim(s.text)} className="mt-1 text-[11.5px] font-medium text-coral hover:underline">Remove this claim</button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -77,7 +88,7 @@ export function CitationList({ item, active, onActive }: { item: ContentItem; ac
             <span className="mt-0.5 flex h-5 min-w-5 items-center justify-center rounded-md bg-[#e3f4fa] font-mono text-[11px] font-semibold text-cyan-deep">{c.n}</span>
             <span className="min-w-0">
               <span className="block text-[13.5px] font-medium text-night">{c.label}</span>
-              <span className="block text-[12px] text-steel">{c.section}</span>
+              <span className="block text-[12px] text-steel">{c.section}{c.page ? ` · p. ${c.page}` : ""}</span>
             </span>
           </button>
           {active === c.n && (

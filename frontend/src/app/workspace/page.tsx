@@ -6,12 +6,14 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { RequireAuth } from "@/components/common/RequireAuth";
 import { useToast } from "@/components/common/Toast";
-import { Badge, Button, Card, Field, PageHeader, Skeleton, StatusBadge, inputCls } from "@/components/common/ui";
+import { Badge, Button, Card, Field, PageHeader, Skeleton, StatusBadge, Tabs, inputCls } from "@/components/common/ui";
+import { MediaUploader } from "@/components/media/MediaUploader";
+import { ProcessingStatusPill } from "@/components/media/ProcessingSteps";
 import { Container } from "@/components/layout/AppShell";
 import { api, ApiError, post } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
-import type { ContentItem } from "@/lib/types";
+import type { ContentItem, MediaItem } from "@/lib/types";
 
 interface Step { key: string; label: string; status: "pending" | "running" | "done" | "failed" | "skipped"; detail: string }
 interface Job { id: number; file_name: string; status: string; steps: Step[]; error: string; document?: { slug: string; title: string; status: string } | null; created_at: string }
@@ -148,15 +150,34 @@ function Uploader({ onDone }: { onDone: () => void }) {
 
 function Workspace() {
   const [tick, setTick] = useState(0);
+  const [mode, setMode] = useState<"document" | "media">("document");
   const jobs = useApi<{ results: Job[] }>("/api/ingestion/jobs", undefined, [tick]);
+  const media = useApi<{ results: MediaItem[] }>("/api/my/media-uploads", undefined, [tick]);
   const content = useApi<{ results: ContentItem[] }>("/api/content", { mine: true });
   return (
     <Container>
       <PageHeader eyebrow="Researcher" title="Researcher Workspace" description="Upload resources into the repository, follow their processing, and turn your research into outreach drafts."
         actions={<Link href="/studio" className="inline-flex h-10 items-center gap-2 rounded-lg bg-night px-4 text-sm font-medium text-white hover:bg-deep"><SquarePen className="h-4 w-4" /> Content Studio</Link>} />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <Uploader onDone={() => setTick((t) => t + 1)} />
+        <div className="min-w-0">
+          <Tabs className="mb-4 w-fit" value={mode} onChange={setMode}
+            tabs={[{ key: "document", label: "Document (PDF · TXT · MD)" }, { key: "media", label: "Image / Video" }]} />
+          {mode === "document" ? <Uploader onDone={() => setTick((t) => t + 1)} /> : <MediaUploader onDone={() => setTick((t) => t + 1)} />}
+        </div>
         <div className="space-y-4">
+          <Card className="p-5">
+            <h2 className="mb-3 font-mono text-[11px] uppercase tracking-wider text-steel">Media uploads</h2>
+            {!media.data?.results.length ? <p className="text-[13px] text-steel">No media uploaded yet.</p> : (
+              <ul className="space-y-2">
+                {media.data.results.slice(0, 8).map((m) => (
+                  <li key={m.id} className="flex items-center justify-between gap-2 text-[13px]">
+                    <Link href={`/media/${m.slug}`} className="min-w-0 truncate text-night hover:text-cyan-deep">{m.title}</Link>
+                    <ProcessingStatusPill status={m.processing_status || "ready"} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
           <Card className="p-5">
             <h2 className="mb-3 font-mono text-[11px] uppercase tracking-wider text-steel">Recent uploads</h2>
             {jobs.loading && !jobs.data ? <Skeleton className="h-24" /> : !jobs.data?.results.length ? <p className="text-[13px] text-steel">No uploads yet.</p> : (

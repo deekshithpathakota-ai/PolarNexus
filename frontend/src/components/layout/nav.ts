@@ -20,7 +20,11 @@ import {
   SquarePen,
   Users,
   Bookmark,
+  CalendarDays,
+  Fingerprint,
   FlaskConical,
+  History,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -50,6 +54,7 @@ export const NAV: NavGroup[] = [
       { href: "/media", label: "Media", icon: Image },
       { href: "/expeditions", label: "Expeditions", icon: Ship },
       { href: "/stations", label: "Research Stations", icon: Building2 },
+      { href: "/activities", label: "Institutional Activities", icon: CalendarDays },
       { href: "/map", label: "Polar Map", icon: Map },
       { href: "/learn", label: "Learn Polar Science", icon: GraduationCap },
     ],
@@ -60,6 +65,8 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/assistant", label: "AI Assistant", icon: Bot },
       { href: "/explore?mode=semantic", label: "Smart Search", icon: Search },
+      { href: "/timeline", label: "Knowledge Timeline", icon: History },
+      { href: "/impact", label: "Impact & KPIs", icon: TrendingUp },
     ],
   },
   {
@@ -79,6 +86,8 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/admin", label: "Dashboard", icon: LayoutDashboard, permission: "view_analytics" },
       { href: "/admin/repository", label: "Repository", icon: FolderCog, permission: "manage_repository" },
+      { href: "/admin/provenance", label: "Provenance & Verification", icon: Fingerprint, permission: "manage_repository" },
+      { href: "/admin/activities", label: "Manage Activities", icon: CalendarDays, permission: "manage_repository" },
       { href: "/admin/users", label: "Users & Roles", icon: Users, permission: "manage_users" },
       { href: "/admin/analytics", label: "Analytics", icon: ChartColumn, permission: "view_analytics" },
       { href: "/admin/audit", label: "Audit Logs", icon: ScrollText, permission: "view_audit" },

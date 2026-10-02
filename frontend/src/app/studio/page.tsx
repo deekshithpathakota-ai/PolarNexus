@@ -5,6 +5,12 @@ import {
   ArrowRight,
   BookOpen,
   ClipboardCheck,
+  FileText,
+  Languages,
+  Mail,
+  Ship,
+  ShieldCheck,
+  Star,
   Eye,
   GraduationCap,
   Megaphone,
@@ -43,7 +49,7 @@ import {
 import { Container } from "@/components/layout/AppShell";
 import { ApiError, api, del, post, put } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { FORMAT_LABEL, genModeLabel, timeAgo } from "@/lib/format";
+import { AUDIENCE_LABEL, FORMAT_LABEL, genModeLabel, timeAgo } from "@/lib/format";
 import { useApi, useDebounced } from "@/lib/hooks";
 import type { ContentItem, SearchResponse } from "@/lib/types";
 
@@ -54,17 +60,53 @@ const FORMATS: { key: string; label: string; desc: string; icon: LucideIcon }[] 
   { key: "student", label: "Student", desc: "Simple explanation", icon: GraduationCap },
   { key: "public", label: "Public", desc: "Plain-language explanation", icon: UserRound },
   { key: "media", label: "Media", desc: "Press-style research summary", icon: BookOpen },
+  { key: "summary", label: "Research Summary", desc: "Structured summary with methods", icon: FileText },
+  { key: "newsletter", label: "Newsletter", desc: "Short feature", icon: Mail },
+  { key: "expedition_update", label: "Expedition Update", desc: "Field news", icon: Ship },
+  { key: "highlight", label: "Research Highlight", desc: "Three-sentence highlight", icon: Star },
 ];
 
-function SourcePicker({ value, onChange }: { value: { type: string; slug: string; title: string } | null; onChange: (v: { type: string; slug: string; title: string }) => void }) {
+const AUDIENCES: { key: string; label: string }[] = [
+  { key: "researchers", label: "Researchers" }, { key: "students", label: "Students" }, { key: "teachers", label: "Teachers" },
+  { key: "general_public", label: "General Public" }, { key: "media", label: "Media" }, { key: "policy", label: "Policy / Institutional" },
+];
+const DEFAULT_AUDIENCE: Record<string, string> = {
+  student: "students", public: "general_public", media: "media", linkedin: "researchers", summary: "researchers",
+  instagram: "general_public", website: "general_public", newsletter: "general_public", expedition_update: "general_public", highlight: "general_public",
+};
+
+const PIPELINE = ["Selected research", "Evidence retrieval", "Key findings", "Evidence validation", "Audience", "Content generation",
+  "Citation attachment", "Evidence check", "Human editing", "Review", "Approval", "Dissemination"];
+const STATUS_STAGE: Record<string, number> = { draft: 8, evidence_checked: 8, changes_requested: 8, under_review: 9, approved: 10, published: 11, rejected: 9 };
+
+function WorkflowStepper({ status }: { status: string }) {
+  const at = STATUS_STAGE[status] ?? 8;
+  return (
+    <ol aria-label="Research-to-outreach workflow" className="flex gap-1 overflow-x-auto pb-1 scrollbar-thin">
+      {PIPELINE.map((p, i) => (
+        <li key={p} aria-current={i === at ? "step" : undefined}
+          className={clsx("shrink-0 rounded-full px-2.5 py-1 text-[11px] whitespace-nowrap",
+            i < at ? "bg-[#e2f4f1] text-teal" : i === at ? (status === "rejected" ? "bg-[#fbe9e5] text-coral" : "bg-night text-white") : "bg-ice text-mist")}>
+          {i + 1}. {p}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+type SourceKind = "document" | "dataset" | "topic" | "expedition" | "activity";
+
+function SourcePicker({ value, onChange }: { value: Source | null; onChange: (v: Source) => void }) {
   const [q, setQ] = useState("");
   const dq = useDebounced(q, 250);
-  const [kind, setKind] = useState<"document" | "dataset" | "topic">("document");
-  const docs = useApi<SearchResponse>(kind === "topic" ? null : kind === "dataset" ? "/api/datasets" : "/api/resources", { q: dq, kind: kind === "document" ? "document" : undefined, page_size: 8, sort: dq ? "relevance" : "views" });
+  const [kind, setKind] = useState<SourceKind>("document");
+  const searchable = kind === "document" || kind === "dataset" || kind === "expedition" || kind === "activity";
+  const docs = useApi<SearchResponse>(!searchable ? null : kind === "dataset" ? "/api/datasets" : "/api/resources",
+    { q: dq, kind: kind === "dataset" ? undefined : kind, page_size: 8, sort: dq ? "relevance" : "views" });
   const topics = useApi<{ results: { slug: string; name: string; count: number }[] }>(kind === "topic" ? "/api/topics" : null);
   return (
     <div>
-      <Tabs className="mb-3 w-fit" value={kind} onChange={setKind} tabs={[{ key: "document", label: "Document" }, { key: "dataset", label: "Dataset" }, { key: "topic", label: "Topic" }]} />
+      <Tabs className="mb-3 w-fit max-w-full" value={kind} onChange={setKind} tabs={[{ key: "document", label: "Document" }, { key: "dataset", label: "Dataset" }, { key: "expedition", label: "Expedition" }, { key: "activity", label: "Activity" }, { key: "topic", label: "Topic" }]} />
       {kind !== "topic" && <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${kind}s…`} className={inputCls} aria-label="Search sources" />}
       <ul className="mt-2 max-h-64 overflow-y-auto rounded-xl border border-frost scrollbar-thin">
         {kind === "topic"
@@ -89,19 +131,32 @@ function SourcePicker({ value, onChange }: { value: { type: string; slug: string
   );
 }
 
-function NewDraft({ initial }: { initial: { type: string; slug: string } | null }) {
+interface Source { type: string; slug: string; title: string; ids?: number[] }
+
+const DETAIL_PATH: Record<string, (s: string) => string> = {
+  document: (s) => `/api/resources/${s}`, dataset: (s) => `/api/datasets/${s}`, expedition: (s) => `/api/expeditions/${s}`,
+  station: (s) => `/api/stations/${s}`, researcher: (s) => `/api/researchers/${s}`, activity: (s) => `/api/activities/${s}`,
+  topic: (s) => `/api/topics/${s}`,
+};
+
+function NewDraft({ initial }: { initial: { type: string; slug: string; ids?: number[] } | null }) {
   const router = useRouter();
   const toast = useToast();
-  const [source, setSource] = useState<{ type: string; slug: string; title: string } | null>(null);
+  const [source, setSource] = useState<Source | null>(null);
   const [format, setFormat] = useState("student");
+  const [audience, setAudience] = useState("students");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<ApiError | null>(null);
   const [stage, setStage] = useState(0);
 
   useEffect(() => {
     if (!initial) return;
-    const path = initial.type === "dataset" ? `/api/datasets/${initial.slug}` : `/api/resources/${initial.slug}`;
-    api<{ title: string }>(path).then((d) => setSource({ ...initial, title: d.title })).catch(() => setSource(null));
+    if (initial.type === "chunks") {
+      setSource({ type: "chunks", slug: "", ids: initial.ids, title: `${initial.ids?.length || 0} cited passages from an AI answer` });
+      return;
+    }
+    const path = (DETAIL_PATH[initial.type] || DETAIL_PATH.document)(initial.slug);
+    api<{ title?: string; name?: string }>(path).then((d) => setSource({ ...initial, title: d.title || d.name || initial.slug })).catch(() => setSource(null));
   }, [initial]);
 
   const stages = ["Retrieve evidence", "Generate draft", "Attach sources", "Evidence validation"];
@@ -112,7 +167,9 @@ function NewDraft({ initial }: { initial: { type: string; slug: string } | null 
     setStage(0);
     const t = setInterval(() => setStage((s) => Math.min(stages.length - 1, s + 1)), 420);
     try {
-      const c = await post<ContentItem>("/api/content/generate", { format, resource_type: source.type, resource_slug: source.slug });
+      const c = await post<ContentItem>("/api/content/generate", source.type === "chunks"
+        ? { format, audience, resource_type: "chunks", chunk_ids: source.ids }
+        : { format, audience, resource_type: source.type, resource_slug: source.slug });
       await new Promise((r) => setTimeout(r, 900));
       toast("success", "Draft generated", "Review the evidence panel before submitting.");
       router.push(`/studio?id=${c.id}`);
@@ -149,7 +206,7 @@ function NewDraft({ initial }: { initial: { type: string; slug: string } | null 
             {FORMATS.map((f) => {
               const I = f.icon;
               return (
-                <button key={f.key} onClick={() => setFormat(f.key)} aria-pressed={format === f.key}
+                <button key={f.key} onClick={() => { setFormat(f.key); setAudience(DEFAULT_AUDIENCE[f.key] || "general_public"); }} aria-pressed={format === f.key}
                   className={clsx("rounded-xl border p-3 text-left transition", format === f.key ? "border-cyan bg-[#f0f9fc] ring-2 ring-cyan/15" : "border-frost hover:border-glacier")}>
                   <I className={clsx("mb-1.5 h-4.5 w-4.5", format === f.key ? "text-cyan-deep" : "text-mist")} />
                   <span className="block text-[14px] font-medium text-night">{f.label}</span>
@@ -159,6 +216,18 @@ function NewDraft({ initial }: { initial: { type: string; slug: string } | null 
             })}
           </div>
         </div>
+      </div>
+      <div className="mt-5">
+        <p className="mb-2 font-mono text-[11px] uppercase tracking-wider text-steel">3 · Audience</p>
+        <div role="radiogroup" aria-label="Audience" className="flex flex-wrap gap-1.5">
+          {AUDIENCES.map((a) => (
+            <button key={a.key} role="radio" aria-checked={audience === a.key} onClick={() => setAudience(a.key)}
+              className={clsx("rounded-full border px-3 py-1 text-[13px]", audience === a.key ? "border-cyan bg-[#e3f4fa] text-cyan-deep" : "border-frost text-ink-soft hover:border-glacier")}>
+              {a.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[11.5px] text-steel">Audience changes wording (simplified for students, teachers and the public), adds classroom questions for teachers and cited decision points for policy readers — never new facts.</p>
       </div>
       {busy && (
         <div className="mt-5 rounded-xl bg-snow p-4" role="status">
@@ -198,7 +267,21 @@ function Editor({ id }: { id: number }) {
   if (loading && !item) return <Skeleton className="h-[520px] w-full rounded-2xl" />;
   if (error || !item) return <ErrorState error={error || "Not found"} onRetry={reload} />;
 
-  const editable = ["draft", "changes_requested"].includes(item.status) && (item.created_by_id === user?.id || can("edit_content"));
+  const editable = ["draft", "evidence_checked", "changes_requested"].includes(item.status) && (item.created_by_id === user?.id || can("edit_content"));
+  const removeClaim = (text: string) => {
+    const esc = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+    const re = new RegExp(`\\s*${esc}(\\s*\\[\\d+\\])*`);
+    const current = body;
+    const next = current.replace(re, "").replace(/\n{3,}/g, "\n\n");
+    if (next === current) {
+      toast("info", "Remove it in the editor", "This sentence is formatted differently in the text — edit it manually.");
+      setMode("edit");
+      return;
+    }
+    setBody(next);
+    setMode("edit");
+    toast("success", "Claim removed", "Save changes to re-run the evidence check.");
+  };
   const dirty = title !== item.title || body !== (item.body || "");
   const run = async (key: string, fn: () => Promise<ContentItem | void>, ok?: string) => {
     setBusy(key);
@@ -223,10 +306,13 @@ function Editor({ id }: { id: number }) {
             {genModeLabel(item.generation_mode)}
           </span>
           <span className="font-mono text-[11px] text-mist">v{item.version}</span>
+          {item.audience && <Badge tone="slate">For {AUDIENCE_LABEL[item.audience] || item.audience}</Badge>}
+          {item.language && item.language !== "English" && <Badge tone="violet">{item.language}</Badge>}
           <div className="ml-auto">
             <Tabs value={mode} onChange={setMode} tabs={[{ key: "preview", label: <span className="inline-flex items-center gap-1"><Eye className="h-3.5 w-3.5" /> Preview</span> }, { key: "edit", label: <span className="inline-flex items-center gap-1"><PenLine className="h-3.5 w-3.5" /> Edit</span> }]} />
           </div>
         </div>
+        <div className="border-b border-frost px-5 py-2.5"><WorkflowStepper status={item.status} /></div>
         <div className="p-5">
           <p className="mb-1 text-[12px] text-steel">Source: <span className="text-night">{item.resource_title}</span></p>
           {mode === "edit" && editable ? (
@@ -252,10 +338,37 @@ function Editor({ id }: { id: number }) {
             </Button>
           )}
           {editable && (
+            <Button variant="secondary" size="sm" loading={busy === "check"} disabled={dirty} icon={<ShieldCheck className="h-3.5 w-3.5" />}
+              title={dirty ? "Save your changes first" : "Run the automated evidence check"}
+              onClick={() => run("check", async () => {
+                const ec = await post<NonNullable<ContentItem["evidence_check"]> & { status: ContentItem["status"] }>(`/api/content/${id}/check`);
+                setSide("check");
+                return { ...item, evidence_check: ec, status: ec.status } as ContentItem;
+              }, "Evidence check complete")}>
+              Run evidence check
+            </Button>
+          )}
+          {editable && (
             <Button size="sm" loading={busy === "submit"} disabled={dirty} title={dirty ? "Save your changes first" : undefined} icon={<Send className="h-3.5 w-3.5" />}
               onClick={() => run("submit", () => post<ContentItem>(`/api/content/${id}/submit`), "Submitted for review")}>
               Submit for review
             </Button>
+          )}
+          {can("generate_content") && (item.language || "English") === "English" && (
+            <select aria-label="Create a translation draft" value="" disabled={busy === "translate"}
+              onChange={(e) => {
+                const language = e.target.value;
+                if (!language) return;
+                run("translate", async () => {
+                  const t = await post<ContentItem>(`/api/content/${id}/translate`, { language });
+                  router.push(`/studio?id=${t.id}`);
+                }, "Translation draft created");
+              }}
+              className="h-8 rounded-lg border border-frost bg-white px-2 text-[12.5px] text-ink-soft">
+              <option value="">Translate draft…</option>
+              <option value="Hindi">Hindi (हिन्दी)</option>
+              <option value="Telugu">Telugu (తెలుగు)</option>
+            </select>
           )}
           {item.status !== "published" && (item.created_by_id === user?.id || user?.role === "admin") && (
             <Button variant="ghost" size="sm" className="ml-auto text-coral" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => setConfirmDel(true)}>Delete</Button>
@@ -274,10 +387,18 @@ function Editor({ id }: { id: number }) {
             ) : null}
           </div>
         )}
+        {item.language && item.language !== "English" && (
+          <div className="flex items-start gap-2 border-t border-[#dcd7f5] bg-[#f6f5fd] px-5 py-3 text-[12.5px] text-night">
+            <Languages className="mt-0.5 h-4 w-4 text-[#5a4bb5]" aria-hidden />
+            Prototype translation workflow: a bilingual editor must confirm meaning, numbers and every [n] marker against the English original before approval.
+          </div>
+        )}
         {item.status === "published" && (
           <div className="flex flex-wrap items-center gap-3 border-t border-[#bfe5df] bg-[#f2faf8] px-5 py-4">
             <Megaphone className="h-5 w-5 text-teal" />
-            <p className="flex-1 text-[13.5px] text-night">Published to: {item.channels.join(", ")}.</p>
+            <p className="flex-1 text-[13.5px] text-night">
+              Published to: {(item.channel_status || []).map((c) => `${c.label}${c.status === "live" ? "" : " (prototype simulation)"}`).join(", ") || item.channels.join(", ")}.
+            </p>
             <Link href="/outreach" className="text-[13px] font-medium text-teal hover:underline">View in Outreach Feed →</Link>
           </div>
         )}
@@ -290,10 +411,11 @@ function Editor({ id }: { id: number }) {
           { key: "history", label: "History" },
         ]} />
         {side === "evidence" && <CitationList item={item} active={active} onActive={setActive} />}
-        {side === "check" && <EvidenceCheckView item={item} rechecking={busy === "check"} onRecheck={() => run("check", async () => {
-          const ec = await post<ContentItem["evidence_check"]>(`/api/content/${id}/check`);
-          return { ...item, evidence_check: ec } as ContentItem;
-        })} />}
+        {side === "check" && <EvidenceCheckView item={item} rechecking={busy === "check"} onRemoveClaim={editable ? removeClaim : undefined}
+          onRecheck={() => run("check", async () => {
+            const ec = await post<NonNullable<ContentItem["evidence_check"]> & { status: ContentItem["status"] }>(`/api/content/${id}/check`);
+            return { ...item, evidence_check: ec, status: ec.status } as ContentItem;
+          })} />}
         {side === "history" && <History item={item} />}
       </Card>
 
@@ -335,8 +457,11 @@ function Studio() {
   const id = sp.get("id") ? Number(sp.get("id")) : null;
   const type = sp.get("type");
   const slug = sp.get("slug");
-  const [initial, setInitial] = useState<{ type: string; slug: string } | null>(null);
-  useEffect(() => setInitial(type && slug ? { type, slug } : null), [type, slug]);
+  const ids = sp.get("ids");
+  const [initial, setInitial] = useState<{ type: string; slug: string; ids?: number[] } | null>(null);
+  useEffect(() => setInitial(
+    type === "chunks" && ids ? { type, slug: "", ids: ids.split(",").map(Number).filter(Boolean).slice(0, 12) }
+      : type && slug ? { type, slug } : null), [type, slug, ids]);
   return (
     <Container className="max-w-[1400px]">
       <PageHeader eyebrow="Outreach" title="Content Studio" description="Turn scientific resources into understandable outreach — source-linked, evidence-checked and human-reviewed before release." />

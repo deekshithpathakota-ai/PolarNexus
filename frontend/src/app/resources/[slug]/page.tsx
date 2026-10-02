@@ -11,6 +11,7 @@ import { TypeBadge } from "@/components/cards/ResourceCard";
 import { BackLink, DetailError, DetailSkeleton, SideCard } from "@/components/common/DetailLayout";
 import { ResourceActions } from "@/components/common/ResourceActions";
 import { Badge, Button, Card, DemoBadge, MetaRow, Tabs } from "@/components/common/ui";
+import { ProvenancePanel } from "@/components/provenance/Provenance";
 import { Container } from "@/components/layout/AppShell";
 import { useAuth } from "@/lib/auth";
 import { BRAND, fmtDate, fmtNum } from "@/lib/format";
@@ -68,8 +69,9 @@ function ResourceDetail() {
             variant="dark"
             onClick={() => (can("generate_content") ? router.push(`/studio?type=document&slug=${doc.slug}`) : router.push(`/login?next=${encodeURIComponent(`/studio?type=document&slug=${doc.slug}`)}`))}
             icon={<SquarePen className="h-4 w-4" />}
+            title="Retrieve evidence, generate a cited draft, run the evidence check and send it for human review"
           >
-            Generate Outreach Content
+            Turn Research Into Outreach
           </Button>
           <div className="flex flex-wrap gap-2 sm:ml-auto">
             <ResourceActions itemType="document" slug={doc.slug} label={doc.title} citation={doc.citation} download={`/api/resources/${doc.slug}/download`} />
@@ -152,6 +154,7 @@ function ResourceDetail() {
         </div>
 
         <aside className="space-y-4">
+          <ProvenancePanel p={doc.provenance} />
           <SideCard title="Metadata">
             <dl>
               <MetaRow label="Type">{doc.doc_type}</MetaRow>
@@ -171,7 +174,7 @@ function ResourceDetail() {
           <SideCard title="Topics">
             <div className="flex flex-wrap gap-1.5">
               {doc.topics.map((t) => (
-                <Link key={t.slug} href={`/explore?topic=${t.slug}`} className="rounded-full bg-ice px-2.5 py-1 text-[12.5px] text-deep hover:bg-frost">{t.name}</Link>
+                <Link key={t.slug} href={`/topics/${t.slug}`} className="rounded-full bg-ice px-2.5 py-1 text-[12.5px] text-deep hover:bg-frost">{t.name}</Link>
               ))}
             </div>
             {doc.keywords.length > 0 && (

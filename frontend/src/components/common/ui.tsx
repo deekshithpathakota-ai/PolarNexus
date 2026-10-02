@@ -9,6 +9,7 @@ import {
   Inbox,
   LoaderCircle,
   RefreshCw,
+  ShieldCheck,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -122,7 +123,11 @@ export function StatusBadge({ status }: { status: string }) {
   const tone: Tone =
     status === "published" ? "teal" : status === "approved" ? "cyan" : status === "under_review" ? "violet"
       : status === "changes_requested" ? "amber" : status === "rejected" ? "coral" : "slate";
-  return <Badge tone={tone}>{STATUS_LABEL[status] || status}</Badge>;
+  return (
+    <Badge tone={tone} icon={status === "evidence_checked" ? <ShieldCheck className="h-3 w-3 text-teal" /> : undefined}>
+      {STATUS_LABEL[status] || status}
+    </Badge>
+  );
 }
 
 export function Chip({ active, children, onClick, onRemove }: { active?: boolean; children: ReactNode; onClick?: () => void; onRemove?: () => void }) {

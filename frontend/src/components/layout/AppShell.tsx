@@ -9,6 +9,7 @@ import {
   House,
   Lock,
   LogIn,
+  Languages,
   LogOut,
   Map as MapIcon,
   Menu,
@@ -22,6 +23,7 @@ import { Logo } from "@/components/art/Logo";
 import { useToast } from "@/components/common/Toast";
 import { api, post } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { LANGS, useI18n, type Lang } from "@/lib/i18n";
 import { timeAgo } from "@/lib/format";
 import type { Notification, Role } from "@/lib/types";
 import { NAV, type NavItem } from "./nav";
@@ -37,6 +39,7 @@ function isActive(pathname: string, href: string) {
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { user, can } = useAuth();
+  const { t } = useI18n();
   const visible = (i: NavItem) => (i.permission ? can(i.permission) : i.auth ? !!user : true);
   return (
     <nav aria-label="Main navigation" className="flex h-full flex-col">
@@ -53,7 +56,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           return (
             <div key={g.label} className="mt-4 first:mt-1">
               <p className="mb-1.5 flex items-center gap-2 px-3 font-mono text-[10px] uppercase tracking-[0.2em] text-mist/80">
-                {g.label}
+                {t(g.label)}
                 {g.tone === "admin" && <span className="rounded bg-white/10 px-1 py-px text-[9px] tracking-wider text-glacier">Admin</span>}
                 {g.tone === "pro" && <span className="rounded bg-white/10 px-1 py-px text-[9px] tracking-wider text-glacier">Pro</span>}
               </p>
@@ -73,7 +76,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                         )}
                       >
                         <I className={clsx("h-[17px] w-[17px] shrink-0", active ? "text-aurora" : "text-mist group-hover:text-glacier")} />
-                        {i.label}
+                        {t(i.label)}
                         {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-aurora" />}
                       </Link>
                     </li>
@@ -93,14 +96,58 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
       <div className="border-t border-white/10 px-5 py-4 text-[11px] leading-relaxed text-mist/80">
         <p className="font-mono uppercase tracking-wider text-glacier/80">SIH26063 Prototype</p>
-        <p className="mt-1">Demo corpus — not official institutional data.</p>
+        <p className="mt-1">{t("Demo corpus — not official institutional data.")}</p>
+        <div className="mt-3 sm:hidden"><LanguageSwitcher dark /></div>
       </div>
     </nav>
   );
 }
 
+function LanguageSwitcher({ className, dark }: { className?: string; dark?: boolean }) {
+  const { lang, setLang, t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, []);
+  const current = LANGS.find((l) => l.code === lang) || LANGS[0];
+  return (
+    <div ref={ref} className={clsx("relative", className ?? "block")}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Interface language: ${current.label}`}
+        title={`${t("Language")} · ${t("Prototype translation")} (navigation)`}
+        className={clsx("inline-flex h-9 items-center gap-1 rounded-lg border px-2 text-[12.5px]",
+          dark ? "border-white/15 bg-white/5 text-frost" : "border-frost bg-white text-ink-soft hover:border-glacier")}
+      >
+        <Languages className="h-4 w-4" aria-hidden /> {current.native}
+      </button>
+      {open && (
+        <div role="menu" className={clsx("absolute z-50 w-40 rounded-xl border border-frost bg-white p-1 shadow-lift", dark ? "bottom-11 left-0" : "right-0 top-11")}>
+          {LANGS.map((l) => (
+            <button key={l.code} role="menuitemradio" aria-checked={l.code === lang}
+              onClick={() => { setLang(l.code as Lang); setOpen(false); }}
+              className={clsx("flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-[13px]", l.code === lang ? "bg-ice text-night" : "text-ink-soft hover:bg-snow")}>
+              {l.native}<span className="text-[11px] text-mist">{l.label}</span>
+            </button>
+          ))}
+          <p className="px-3 pb-1.5 pt-1 text-[10.5px] leading-snug text-mist">Prototype UI translation (navigation). Content stays in its original language.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GlobalSearch() {
   const router = useRouter();
+  const { t } = useI18n();
   const [q, setQ] = useState("");
   return (
     <form
@@ -115,7 +162,7 @@ function GlobalSearch() {
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Search polar knowledge…"
+        placeholder={t("Search polar knowledge…")}
         aria-label="Search polar knowledge"
         className="h-10 w-full rounded-xl border border-frost bg-snow pl-9 pr-3 text-sm text-night placeholder:text-mist focus:border-cyan focus:bg-white focus:outline-none focus:ring-2 focus:ring-cyan/20"
       />
@@ -303,8 +350,14 @@ function UserMenu() {
   );
 }
 
+function AskLabel() {
+  const { t } = useI18n();
+  return <>{t("Ask AI")}</>;
+}
+
 function MobileBottomNav({ onMenu }: { onMenu: () => void }) {
   const pathname = usePathname();
+  const { t } = useI18n();
   const items = [
     { href: "/", label: "Home", icon: House },
     { href: "/explore", label: "Explore", icon: Compass },
@@ -318,13 +371,13 @@ function MobileBottomNav({ onMenu }: { onMenu: () => void }) {
         return (
           <Link key={href} href={href} className={clsx("flex flex-col items-center gap-0.5 py-2 text-[10.5px]", active ? "text-cyan-deep" : "text-steel")}>
             <I className="h-5 w-5" />
-            {label}
+            {t(label)}
           </Link>
         );
       })}
       <button onClick={onMenu} className="flex flex-col items-center gap-0.5 py-2 text-[10.5px] text-steel" aria-label="Open full menu">
         <Menu className="h-5 w-5" />
-        Menu
+        {t("Menu")}
       </button>
     </nav>
   );
@@ -374,8 +427,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Search className="h-5 w-5" />
               </Link>
               <Link href="/assistant" className="hidden items-center gap-2 rounded-lg border border-frost px-3 py-1.5 text-[13px] text-deep hover:border-glacier hover:bg-ice sm:inline-flex">
-                <Bot className="h-4 w-4 text-cyan-deep" /> Ask AI
+                <Bot className="h-4 w-4 text-cyan-deep" /> <AskLabel />
               </Link>
+              <LanguageSwitcher className="hidden sm:flex" />
               <Notifications />
               <UserMenu />
             </div>

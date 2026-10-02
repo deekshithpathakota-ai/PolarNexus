@@ -1,10 +1,11 @@
 "use client";
 
 import clsx from "clsx";
-import { ArrowRight, BookOpen, Building2, Database, Film, Image as ImageIcon, MapPin, Ship, UserRound } from "lucide-react";
+import { ArrowRight, BookOpen, Building2, CalendarDays, Database, Film, Image as ImageIcon, MapPin, Megaphone, Ship, Tag, UserRound } from "lucide-react";
 import Link from "next/link";
 import { PolarScene } from "@/components/art/PolarScene";
 import { Badge, DemoBadge, type Tone } from "@/components/common/ui";
+import { VerificationBadge } from "@/components/provenance/Provenance";
 import { highlightTerms } from "@/components/common/Markdown";
 import type { Card as CardT, SearchResult } from "@/lib/types";
 
@@ -15,6 +16,9 @@ export const TYPE_META: Record<string, { icon: typeof BookOpen; tone: Tone; labe
   expedition: { icon: Ship, tone: "amber", label: "Expedition" },
   station: { icon: Building2, tone: "night", label: "Station" },
   researcher: { icon: UserRound, tone: "slate", label: "Researcher" },
+  activity: { icon: CalendarDays, tone: "coral", label: "Activity" },
+  topic: { icon: Tag, tone: "cyan", label: "Topic" },
+  content: { icon: Megaphone, tone: "teal", label: "Outreach" },
 };
 
 export function TypeBadge({ type, kind }: { type: string; kind?: string }) {
@@ -30,6 +34,7 @@ export function TypeBadge({ type, kind }: { type: string; kind?: string }) {
 export function ResourceCard({ item, terms = [], compact, showReason }: { item: CardT | SearchResult; terms?: string[]; compact?: boolean; showReason?: boolean }) {
   const r = item as SearchResult;
   const scene = (item.extra?.scene as string) || null;
+  const thumb = (item.extra?.thumbnail as string) || null;
   return (
     <Link
       href={item.url}
@@ -37,9 +42,14 @@ export function ResourceCard({ item, terms = [], compact, showReason }: { item: 
         "group flex h-full flex-col overflow-hidden rounded-2xl border border-frost bg-white shadow-card transition-all hover:-translate-y-0.5 hover:border-glacier hover:shadow-lift",
       )}
     >
-      {scene && !compact && (
+      {(scene || thumb) && !compact && (
         <div className="relative aspect-[16/9] overflow-hidden bg-ice">
-          <PolarScene scene={scene} seed={item.slug} title={item.title} className="h-full w-full transition-transform duration-500 group-hover:scale-[1.03]" />
+          {thumb ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumb} alt={item.title} loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+          ) : (
+            <PolarScene scene={scene!} seed={item.slug} title={item.title} className="h-full w-full transition-transform duration-500 group-hover:scale-[1.03]" />
+          )}
           {item.extra?.media_type === "video" && (
             <span className="absolute bottom-2 right-2 rounded-md bg-abyss/75 px-1.5 py-0.5 font-mono text-[10.5px] text-white">▶ {String(item.extra?.duration || "video")}</span>
           )}
@@ -54,7 +64,12 @@ export function ResourceCard({ item, terms = [], compact, showReason }: { item: 
             </span>
           )}
           {item.year && <span className="font-mono text-[12px] text-steel">· {item.year}</span>}
-          {item.is_demo && <DemoBadge className="ml-auto" label="Demo" />}
+          {item.is_demo ? (
+            <DemoBadge className="ml-auto" label={item.verification === "synthetic_demo" ? "Synthetic" : "Demo"} />
+          ) : item.verification && item.type !== "topic" ? (
+            <VerificationBadge className="ml-auto" status={item.verification} label={item.verification_label} official={item.official} />
+          ) : null}
+          {item.is_demo && item.official && <VerificationBadge status="verified" official />}
         </div>
         <h3 className={clsx("font-display leading-snug text-night group-hover:text-cyan-deep", compact ? "text-[16px]" : "text-[18px]")}>
           {highlightTerms(item.title, terms)}

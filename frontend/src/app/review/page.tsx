@@ -16,7 +16,7 @@ import { FORMAT_LABEL, STATUS_LABEL, genModeLabel, timeAgo } from "@/lib/format"
 import { useApi } from "@/lib/hooks";
 import type { ContentItem, ContentStatus } from "@/lib/types";
 
-const ORDER: ContentStatus[] = ["under_review", "changes_requested", "approved", "published", "rejected", "draft"];
+const ORDER: ContentStatus[] = ["under_review", "changes_requested", "approved", "published", "rejected", "draft", "evidence_checked"];
 const CHANNELS = ["website", "linkedin", "instagram", "newsletter"] as const;
 
 function Detail({ id, onChanged }: { id: number; onChanged: () => void }) {
@@ -98,7 +98,7 @@ function Detail({ id, onChanged }: { id: number; onChanged: () => void }) {
             </>
           )}
           {item.status === "published" && (
-            <p className="flex items-center gap-2 text-[13.5px] text-teal"><Megaphone className="h-4 w-4" /> Published to {item.channels.join(", ")} · <Link href="/outreach" className="underline">view feed</Link></p>
+            <p className="flex items-center gap-2 text-[13.5px] text-teal"><Megaphone className="h-4 w-4" /> Published to {item.channels.join(", ")}{item.channels.some((x) => x !== "website") ? " (social channels: prototype simulation)" : ""} · <Link href={`/outreach/${item.id}`} className="underline">view</Link></p>
           )}
           {["draft", "changes_requested", "rejected"].includes(item.status) && <p className="text-[13px] text-steel">Waiting on the author — no reviewer action needed.</p>}
         </div>
@@ -124,7 +124,10 @@ function Detail({ id, onChanged }: { id: number; onChanged: () => void }) {
           {CHANNELS.map((c) => (
             <label key={c} className={clsx("flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-[13.5px] capitalize", channels.includes(c) ? "border-cyan bg-[#f0f9fc]" : "border-frost")}>
               <input type="checkbox" className="accent-[#0f7fa1]" checked={channels.includes(c)} onChange={() => setChannels((s) => (s.includes(c) ? s.filter((x) => x !== c) : [...s, c]))} />
-              {c}{c !== "website" && <span className="ml-auto text-[10.5px] normal-case text-mist">simulated</span>}
+              {c}
+              <span className={clsx("ml-auto rounded px-1.5 py-px font-mono text-[9.5px] uppercase tracking-wide", c === "website" ? "bg-[#e2f4f1] text-teal" : "bg-[#fbf1df] text-[#8a5c0c]")}>
+                {c === "website" ? "Live" : "Connector ready"}
+              </span>
             </label>
           ))}
         </div>

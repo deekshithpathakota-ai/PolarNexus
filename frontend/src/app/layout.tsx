@@ -10,6 +10,7 @@ import type { Metadata, Viewport } from "next";
 import { AppShell } from "@/components/layout/AppShell";
 import { ToastProvider } from "@/components/common/Toast";
 import { AuthProvider } from "@/lib/auth";
+import { LanguageProvider } from "@/lib/i18n";
 
 const brand = process.env.NEXT_PUBLIC_BRAND_NAME || "PolarNexus";
 
@@ -30,11 +31,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <AuthProvider>
-          <ToastProvider>
-            <AppShell>{children}</AppShell>
-          </ToastProvider>
-        </AuthProvider>
+        <LanguageProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <AppShell>{children}</AppShell>
+            </ToastProvider>
+          </AuthProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

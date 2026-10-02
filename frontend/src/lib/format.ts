@@ -31,9 +31,10 @@ export function coord(lat: number, lon: number) {
 
 export const STATUS_LABEL: Record<string, string> = {
   draft: "Draft",
+  evidence_checked: "Evidence Checked",
   under_review: "Under Review",
   changes_requested: "Changes Requested",
-  approved: "Approved",
+  approved: "Approved · Ready to Publish",
   published: "Published",
   rejected: "Rejected",
 };
@@ -45,10 +46,24 @@ export const FORMAT_LABEL: Record<string, string> = {
   student: "Student · Simple explanation",
   public: "Public · Plain language",
   media: "Media · Press-style summary",
+  summary: "Research Summary",
+  newsletter: "Newsletter · Short feature",
+  expedition_update: "Expedition Update",
+  highlight: "Research Highlight",
+};
+
+export const AUDIENCE_LABEL: Record<string, string> = {
+  researchers: "Researchers",
+  students: "Students",
+  teachers: "Teachers",
+  general_public: "General Public",
+  media: "Media",
+  policy: "Policy / Institutional",
 };
 
 export const MODE_LABEL: Record<string, string> = {
   llm: "LLM",
+  "llm-translation": "Machine translation",
   template: "Template",
   curated_demo: "Demo (curated)",
   manual: "Manual",
@@ -71,4 +86,16 @@ export function hashString(s: string) {
     h = Math.imul(h, 16777619);
   }
   return h >>> 0;
+}
+
+export function fmtBytes(n: number | null | undefined) {
+  if (!n) return "—";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function fmtDuration(s: number | null | undefined) {
+  if (!s) return "";
+  return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 }

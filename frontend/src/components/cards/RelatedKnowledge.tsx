@@ -14,6 +14,8 @@ const LABELS: Record<string, string> = {
   station: "Stations",
   media: "Media",
   researcher: "Researchers",
+  activity: "Institutional Activities",
+  content: "Published Outreach",
 };
 
 export function RelatedKnowledge({ related, graph }: { related: Related; graph?: { type: string; slug: string } }) {

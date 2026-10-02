@@ -10,7 +10,7 @@ import { loadLand } from "./geo";
 export type MapView = "antarctic" | "arctic" | "world";
 export interface MapPoint {
   key: string;
-  kind: "station" | "expedition" | "dataset";
+  kind: "station" | "expedition" | "dataset" | "media" | "activity";
   name: string;
   lat: number;
   lon: number;
@@ -97,7 +97,7 @@ export function PolarMap({ view, points, selected, onSelect }: {
             if (!xy) return null;
             const active = selected === p.key;
             const s = 1 / zoom;
-            const color = p.kind === "station" ? "#4fd1a5" : p.kind === "expedition" ? "#f0b35a" : "#7fc8ff";
+            const color = p.kind === "station" ? "#4fd1a5" : p.kind === "expedition" ? "#f0b35a" : p.kind === "media" ? "#c4b5fd" : p.kind === "activity" ? "#ff9b85" : "#7fc8ff";
             return (
               <g
                 key={p.key}
@@ -117,6 +117,10 @@ export function PolarMap({ view, points, selected, onSelect }: {
                   <rect x="-7" y="-7" width="14" height="14" transform="rotate(45)" fill={color} stroke="#061423" strokeWidth="1.5" strokeDasharray={p.verified === false ? "2 2" : undefined} />
                 ) : p.kind === "expedition" ? (
                   <circle r="6.5" fill={color} stroke="#061423" strokeWidth="1.5" />
+                ) : p.kind === "media" ? (
+                  <path d="M0 -7 L6.5 5 L-6.5 5 Z" fill={color} stroke="#061423" strokeWidth="1.5" />
+                ) : p.kind === "activity" ? (
+                  <path d="M-6 -3.5 L0 -7 L6 -3.5 L6 3.5 L0 7 L-6 3.5 Z" fill={color} stroke="#061423" strokeWidth="1.5" />
                 ) : (
                   <rect x="-5.5" y="-5.5" width="11" height="11" rx="2" fill={color} stroke="#061423" strokeWidth="1.5" />
                 )}

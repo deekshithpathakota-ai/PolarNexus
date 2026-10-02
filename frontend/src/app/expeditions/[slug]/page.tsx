@@ -7,6 +7,9 @@ import { RelatedKnowledge } from "@/components/cards/RelatedKnowledge";
 import { BackLink, DetailError, DetailSkeleton, SideCard } from "@/components/common/DetailLayout";
 import { ResourceActions } from "@/components/common/ResourceActions";
 import { Badge, Card, DemoBadge, MetaRow } from "@/components/common/ui";
+import { OutreachButton } from "@/components/outreach/OutreachButton";
+import { ProvenancePanel } from "@/components/provenance/Provenance";
+import { KnowledgeTimeline } from "@/components/timeline/KnowledgeTimeline";
 import { Container } from "@/components/layout/AppShell";
 import { coord } from "@/lib/format";
 import { useApi } from "@/lib/hooks";
@@ -28,7 +31,10 @@ export default function ExpeditionDetail() {
         </div>
         <h1 className="text-[30px] leading-tight text-night md:text-[40px]">{e.name}</h1>
         <p className="mt-3 max-w-3xl text-[16px] leading-relaxed text-ink-soft">{e.objective}</p>
-        <div className="mt-5 flex flex-wrap gap-2"><ResourceActions itemType="expedition" slug={e.slug} label={e.name} /></div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <OutreachButton type="expedition" slug={e.slug} size="sm" />
+          <ResourceActions itemType="expedition" slug={e.slug} label={e.name} />
+        </div>
       </header>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-6">
@@ -40,8 +46,13 @@ export default function ExpeditionDetail() {
             {e.verified_note && <p className="mt-4 rounded-lg bg-snow p-3 text-[12.5px] text-steel">Source note: {e.verified_note}</p>}
           </Card>
           <RelatedKnowledge related={e.related} graph={{ type: "expedition", slug: e.slug }} />
+          <Card className="p-5">
+            <h2 className="mb-3 text-lg text-night">Knowledge Timeline</h2>
+            <KnowledgeTimeline scope={{ expedition: e.slug }} maxItems={12} />
+          </Card>
         </div>
         <aside className="space-y-4">
+          <ProvenancePanel p={e.provenance} />
           <SideCard title="Expedition record">
             <dl>
               <MetaRow label="Programme">{e.program}</MetaRow>
@@ -55,7 +66,7 @@ export default function ExpeditionDetail() {
           </SideCard>
           <SideCard title="Research themes">
             <div className="flex flex-wrap gap-1.5">
-              {(e.topics.length ? e.topics : []).map((t) => <Link key={t.slug} href={`/explore?topic=${t.slug}`} className="rounded-full bg-ice px-2.5 py-1 text-[12.5px] text-deep hover:bg-frost">{t.name}</Link>)}
+              {(e.topics.length ? e.topics : []).map((t) => <Link key={t.slug} href={`/topics/${t.slug}`} className="rounded-full bg-ice px-2.5 py-1 text-[12.5px] text-deep hover:bg-frost">{t.name}</Link>)}
             </div>
             <Link href={`/explore?expedition=${e.slug}`} className="mt-3 inline-block text-[13px] text-cyan-deep hover:underline">All resources from this expedition →</Link>
           </SideCard>

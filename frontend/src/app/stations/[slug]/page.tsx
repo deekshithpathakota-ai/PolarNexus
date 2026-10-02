@@ -9,7 +9,10 @@ import { RelatedKnowledge } from "@/components/cards/RelatedKnowledge";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { BackLink, DetailError, DetailSkeleton, SideCard } from "@/components/common/DetailLayout";
 import { ResourceActions } from "@/components/common/ResourceActions";
-import { Badge, DemoBadge, MetaRow } from "@/components/common/ui";
+import { Badge, Card, DemoBadge, MetaRow } from "@/components/common/ui";
+import { OutreachButton } from "@/components/outreach/OutreachButton";
+import { ProvenancePanel } from "@/components/provenance/Provenance";
+import { KnowledgeTimeline } from "@/components/timeline/KnowledgeTimeline";
 import { Container } from "@/components/layout/AppShell";
 import { PolarMap } from "@/components/maps/PolarMap";
 import { coord, fmtNum } from "@/lib/format";
@@ -37,12 +40,19 @@ export default function StationDetail() {
           <h1 className="text-[36px] leading-tight md:text-[48px]">{s.name}</h1>
           <p className="mt-1 text-frost/80">{s.kind}</p>
           <p className="mt-4 text-[15.5px] leading-relaxed text-frost/90">{s.description}</p>
-          <div className="mt-5 flex flex-wrap gap-2"><ResourceActions itemType="station" slug={s.slug} label={s.name} citation={`${s.name}, ${s.location_name}. Source: ${s.facts_source}.`} /></div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <OutreachButton type="station" slug={s.slug} size="sm" variant="primary" />
+            <ResourceActions itemType="station" slug={s.slug} label={s.name} citation={`${s.name}, ${s.location_name}. Source: ${s.facts_source}.`} />
+          </div>
         </div>
       </div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <RelatedKnowledge related={s.related} graph={{ type: "station", slug: s.slug }} />
+          <Card className="p-5">
+            <h2 className="mb-3 text-lg text-night">Knowledge Timeline</h2>
+            <KnowledgeTimeline scope={{ station: s.slug }} maxItems={12} />
+          </Card>
         </div>
         <aside className="space-y-4">
           <div className="h-[300px]">
@@ -50,6 +60,7 @@ export default function StationDetail() {
               <PolarMap view={view} points={[{ key: s.slug, kind: "station", name: s.name, lat: s.latitude, lon: s.longitude, verified: s.verified }]} selected={sel} onSelect={setSel} />
             </ErrorBoundary>
           </div>
+          <ProvenancePanel p={s.provenance} compact />
           <SideCard title="Station facts">
             <dl>
               <MetaRow label="Location"><span className="inline-flex items-start gap-1"><MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mist" />{s.location_name}</span></MetaRow>
@@ -63,7 +74,7 @@ export default function StationDetail() {
           </SideCard>
           <SideCard title="Research themes">
             <div className="flex flex-wrap gap-1.5">
-              {s.topics.map((t) => <Link key={t.slug} href={`/explore?topic=${t.slug}`} className="rounded-full bg-ice px-2.5 py-1 text-[12.5px] text-deep hover:bg-frost">{t.name}</Link>)}
+              {s.topics.map((t) => <Link key={t.slug} href={`/topics/${t.slug}`} className="rounded-full bg-ice px-2.5 py-1 text-[12.5px] text-deep hover:bg-frost">{t.name}</Link>)}
             </div>
             <Link href={`/explore?station=${s.slug}`} className="mt-3 inline-block text-[13px] text-cyan-deep hover:underline">All resources linked to {s.name} →</Link>
           </SideCard>

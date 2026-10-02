@@ -26,7 +26,14 @@ import type { SearchResponse } from "@/lib/types";
 import { SearchBox } from "./SearchBox";
 
 const REGIONS = ["Antarctic", "Arctic", "Southern Ocean", "Himalaya", "India"];
-const ALL_TYPES = ["Research Paper", "Technical Report", "Expedition Report", "Educational Resource", "News / Outreach", "Dataset", "Image", "Video", "Infographic", "Expedition", "Research Station", "Researcher"];
+const ALL_TYPES = ["Research Paper", "Technical Report", "Expedition Report", "Educational Resource", "News / Outreach", "Dataset", "Image", "Video", "Infographic", "Expedition", "Research Station", "Researcher", "Institutional Activity", "Topic", "Outreach Content"];
+const VERIFICATION = ["Verified", "Official", "Partner", "Uploaded", "Pending", "Demo", "Synthetic"];
+const GROUP_TYPE: Record<string, string[]> = {
+  Documents: ["Research Paper", "Technical Report", "Expedition Report", "Educational Resource", "News / Outreach"],
+  Datasets: ["Dataset"], Images: ["Image", "Infographic"], Videos: ["Video"], Expeditions: ["Expedition"],
+  Stations: ["Research Station"], Researchers: ["Researcher"], "Institutional Activities": ["Institutional Activity"],
+  Topics: ["Topic"], "Outreach Content": ["Outreach Content"],
+};
 const DOC_TYPES = ALL_TYPES.slice(0, 5);
 const MEDIA_TYPES = ["Image", "Video", "Infographic"];
 
@@ -91,17 +98,21 @@ export function ExploreView({ kind, header }: { kind?: Kind; header: ReactNode }
   const language = get("language");
   const dataType = get("data_type");
   const category = get("category");
+  const verification = getAll("verification");
+  const organisation = get("organisation");
+  const researcher = get("researcher");
 
   const endpoint = kind === "dataset" ? "/api/datasets" : kind === "media" ? "/api/media" : "/api/resources";
   const query = {
     q, mode, sort, page, page_size: kind === "media" ? 12 : 12, region: regions, type: types, topic: topics,
-    year_from: yearFrom, year_to: yearTo, station, expedition, language, data_type: dataType,
+    year_from: yearFrom, year_to: yearTo, station, expedition, language, data_type: dataType, verification, organisation, researcher,
     kind: kind === "document" ? "document" : undefined, category: kind === "media" ? category : undefined,
   };
   const { data, error, loading, reload } = useApi<SearchResponse & { categories?: Record<string, number> }>(endpoint, query);
   const topicList = useApi<{ results: { slug: string; name: string; count: number }[] }>("/api/topics");
   const stationList = useApi<{ results: { slug: string; name: string }[] }>("/api/stations");
   const expList = useApi<{ results: { slug: string; name: string; season: string }[] }>("/api/expeditions");
+  const options = useApi<{ organisations: string[]; researchers: { slug: string; name: string }[] }>("/api/filters/options");
   const terms = useMemo(() => (q ? q.split(/\s+/).filter((t) => t.length > 2) : []), [q]);
 
   const typeOptions = kind === "document" ? DOC_TYPES : kind === "media" ? MEDIA_TYPES : kind === "dataset" ? [] : ALL_TYPES;
@@ -117,9 +128,12 @@ export function ExploreView({ kind, header }: { kind?: Kind; header: ReactNode }
     ...(language ? [{ label: language, clear: () => set({ language: null }) }] : []),
     ...(dataType ? [{ label: dataType, clear: () => set({ data_type: null }) }] : []),
     ...(category ? [{ label: category, clear: () => set({ category: null }) }] : []),
+    ...verification.map((v) => ({ label: v, clear: () => toggle("verification", verification, v) })),
+    ...(organisation ? [{ label: organisation, clear: () => set({ organisation: null }) }] : []),
+    ...(researcher ? [{ label: `Researcher: ${options.data?.researchers.find((r) => r.slug === researcher)?.name || researcher}`, clear: () => set({ researcher: null }) }] : []),
   ];
   const clearAll = () =>
-    set({ region: null, type: null, topic: null, year_from: null, year_to: null, station: null, expedition: null, language: null, data_type: null, category: null });
+    set({ region: null, type: null, topic: null, year_from: null, year_to: null, station: null, expedition: null, language: null, data_type: null, category: null, verification: null, organisation: null, researcher: null });
 
   const facets = data?.facets;
   const filters = (
@@ -181,6 +195,23 @@ export function ExploreView({ kind, header }: { kind?: Kind; header: ReactNode }
           {expList.data?.results.map((s) => <option key={s.slug} value={s.slug}>{s.name}</option>)}
         </select>
       </FilterGroup>
+      <FilterGroup title="Verification">
+        {VERIFICATION.map((v) => (
+          <Check key={v} label={v} checked={verification.includes(v)} onChange={() => toggle("verification", verification, v)} count={facets?.verification?.[v]} />
+        ))}
+      </FilterGroup>
+      <FilterGroup title="Researcher">
+        <select value={researcher} onChange={(e) => set({ researcher: e.target.value || null })} className={inputCls} aria-label="Researcher">
+          <option value="">Any researcher</option>
+          {options.data?.researchers.map((r) => <option key={r.slug} value={r.slug}>{r.name}</option>)}
+        </select>
+      </FilterGroup>
+      <FilterGroup title="Organisation">
+        <select value={organisation} onChange={(e) => set({ organisation: e.target.value || null })} className={inputCls} aria-label="Organisation">
+          <option value="">Any organisation</option>
+          {options.data?.organisations.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
+      </FilterGroup>
       {kind !== "dataset" && kind !== "media" && (
         <FilterGroup title="Language">
           <select value={language} onChange={(e) => set({ language: e.target.value || null })} className={inputCls} aria-label="Language">
@@ -230,6 +261,21 @@ export function ExploreView({ kind, header }: { kind?: Kind; header: ReactNode }
           </Button>
         </div>
       </div>
+
+      {!kind && data?.facets.resource_groups && Object.keys(data.facets.resource_groups).length > 1 && (
+        <nav aria-label="Results by resource type" className="mb-4 flex flex-wrap gap-1.5">
+          {Object.entries(data.facets.resource_groups).map(([g, n]) => {
+            const on = GROUP_TYPE[g]?.every((t) => types.includes(t));
+            return (
+              <button key={g} type="button" aria-pressed={on}
+                onClick={() => set({ type: on ? types.filter((t) => !GROUP_TYPE[g].includes(t)) : Array.from(new Set([...types, ...(GROUP_TYPE[g] || [])])) })}
+                className={clsx("rounded-full border px-3 py-1 text-[12.5px]", on ? "border-cyan bg-[#e3f4fa] text-cyan-deep" : "border-frost bg-white text-ink-soft hover:border-glacier")}>
+                <strong className="font-semibold text-night">{fmtNum(n)}</strong> {g}
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
       {activeChips.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
