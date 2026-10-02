@@ -16,6 +16,15 @@ from app.models.knowledge import (  # noqa: F401
 )
 from app.models.telemetry import AIQuery, AnalyticsEvent, AuditLog, SearchLog  # noqa: F401
 from app.models.user import Role, User  # noqa: F401
+from app.models.v3 import (  # noqa: F401
+    Campaign,
+    CampaignItem,
+    DatasetUpload,
+    OutreachEvent,
+    ResearchStory,
+    ResourceVersion,
+    VisualEmbedding,
+)
 from app.models.workflow import (  # noqa: F401
     Citation,
     GeneratedContent,

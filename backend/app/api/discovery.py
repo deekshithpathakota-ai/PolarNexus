@@ -292,6 +292,10 @@ def update_provenance(rtype: str, key: str, body: ProvenancePatch, db: Session =
     action = ("verify" if new in prov.TRUSTED_STATUSES and new != old else
               "reject" if new == "unverified" and old != "unverified" else
               "verification_change" if new != old else "provenance_edit")
+    if new != old:
+        from app.services import versions
+
+        versions.record(db, rtype, obj, f"{prov.VERIFICATION[new][0]}" + (f" — {body.comment}" if body.comment else ""), new, user)
     audit(db, user, action, rtype, getattr(obj, "slug", obj.id),
           f"{prov.VERIFICATION[old][0]} → {prov.VERIFICATION[new][0]}" + (f". {body.comment}" if body.comment else "")
           + ("" if new != old else f" (fields: {', '.join(sorted(changes))})"))

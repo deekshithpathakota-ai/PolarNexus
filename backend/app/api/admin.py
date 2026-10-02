@@ -140,6 +140,10 @@ def update_metadata(kind: str, rid: int, body: MetadataUpdate, db: Session = Dep
         index_resource(db, kind, rid)
     audit(db, user, "visibility_change" if changes == ["visibility"] else "metadata_edit", kind,
           getattr(obj, "slug", rid), "Changed: " + ", ".join(changes))
+    if changes:
+        from app.services import versions
+
+        versions.record(db, kind, obj, "Metadata corrected: " + ", ".join(changes), "", user)
     return {"ok": True, "changed": changes}
 
 

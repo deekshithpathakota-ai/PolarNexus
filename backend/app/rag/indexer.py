@@ -98,7 +98,8 @@ def media_passages(m: Media) -> list[DocumentChunk]:
         exif_bits.append(f"Location: {m.location}")
     if m.duration_seconds:
         exif_bits.append(f"Duration {int(m.duration_seconds // 60)} min {int(m.duration_seconds % 60)} s")
-    head = (f"{m.title}. {m.description} Tags: {', '.join(m.tags or [])}. Category: {m.category}. Region: {m.region}."
+    extra = " ".join(x for x in (m.caption if m.caption and m.caption != m.description else "", m.alt_text or "") if x)
+    head = (f"{m.title}. {m.description} {extra + ' ' if extra else ''}Tags: {', '.join(m.tags or [])}. Category: {m.category}. Region: {m.region}."
             + (" " + ". ".join(exif_bits) + "." if exif_bits else ""))
     out = [DocumentChunk(resource_type="media", resource_id=m.id, section="Media description", text=head)]
     if m.transcript:
@@ -177,7 +178,7 @@ def reindex_all(db: Session) -> dict:
     texts = [_embed_text(c, titles) for c in chunks]
 
     provider: emb.EmbeddingProvider
-    if settings.llm_enabled:
+    if settings.embedding_api_enabled:
         provider = emb.OpenAIEmbeddingProvider()
         try:
             vectors = provider.embed(texts)

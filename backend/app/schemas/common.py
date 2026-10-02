@@ -36,6 +36,8 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=2, max_length=1000)
     document_slug: str | None = Field(default=None, max_length=160)
     mode: Literal["hybrid", "keyword", "semantic"] = "hybrid"
+    # v3 educational modes; omitted = the original behaviour
+    audience: Literal["researcher", "teacher", "student", "public"] | None = None
 
     @field_validator("question")
     @classmethod
@@ -84,7 +86,7 @@ class ReviewAction(BaseModel):
     content_id: int | None = None
     action: Literal["approve", "reject", "request_changes", "publish", "comment"] | None = None
     comment: str = Field(default="", max_length=4000)
-    channels: list[Literal["website", "linkedin", "instagram", "newsletter"]] = Field(default_factory=lambda: ["website"])
+    channels: list[Literal["website", "linkedin", "instagram", "newsletter", "education_portal"]] = Field(default_factory=lambda: ["website"])
     acknowledge_warnings: bool = False
 
 

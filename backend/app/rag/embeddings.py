@@ -44,8 +44,8 @@ class OpenAIEmbeddingProvider:
             with httpx.Client(timeout=settings.AI_TIMEOUT_SECONDS) as client:
                 for i in range(0, len(texts), 64):
                     resp = client.post(
-                        f"{settings.OPENAI_BASE_URL.rstrip('/')}/embeddings",
-                        headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
+                        f"{settings.embedding_base_url}/embeddings",
+                        headers={"Authorization": f"Bearer {settings.embedding_api_key}"},
                         json={"model": settings.EMBEDDING_MODEL, "input": texts[i : i + 64]},
                     )
                     resp.raise_for_status()
@@ -114,7 +114,7 @@ def set_local_provider(provider: LocalLSAEmbeddingProvider) -> None:
 
 def get_provider(db: Session) -> EmbeddingProvider | None:
     """Active provider for queries. Returns None if no local model has been fitted yet."""
-    if settings.llm_enabled:
+    if settings.embedding_api_enabled:
         return OpenAIEmbeddingProvider()
     return load_local_provider(db)
 

@@ -31,8 +31,8 @@ class OpenAICompatibleLLM:
         try:
             with httpx.Client(timeout=settings.AI_TIMEOUT_SECONDS) as client:
                 resp = client.post(
-                    f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
-                    headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
+                    f"{settings.llm_base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.llm_api_key}"},
                     json={
                         "model": settings.LLM_MODEL,
                         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -55,6 +55,24 @@ def ai_status() -> dict:
     return {
         "llm_configured": settings.llm_enabled,
         "llm_model": settings.LLM_MODEL if settings.llm_enabled else None,
-        "embedding_provider": f"openai:{settings.EMBEDDING_MODEL}" if settings.llm_enabled else "local-lsa-v1",
+        "llm_provider": (settings.LLM_PROVIDER or "openai-compatible") if settings.llm_enabled else "none",
+        "llm_base_url_host": _host(settings.llm_base_url) if settings.llm_enabled else None,
+        "embedding_provider": f"openai:{settings.EMBEDDING_MODEL}" if settings.embedding_api_enabled else "local-lsa-v1",
         "fallback": None if settings.llm_enabled else "Extractive answers + curated demo responses (no LLM key configured)",
+        "visual_search": _visual_status(),
     }
+
+
+def _host(url: str) -> str:
+    from urllib.parse import urlparse
+
+    return urlparse(url).netloc  # never expose keys or paths
+
+
+def _visual_status() -> dict:
+    try:
+        from app.services.visual import status
+
+        return status()
+    except Exception as exc:  # optional subsystem — never break /status
+        return {"enabled": False, "reason": str(exc)}

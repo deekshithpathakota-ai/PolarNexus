@@ -402,11 +402,14 @@ def seed(db: Session) -> dict:
     from app.services.provenance import ensure_all
     ensure_all(db)
 
+    from app.seed.v3 import seed_v3  # real public-source records + labelled v3 demonstration data
+    v3 = seed_v3(db)
+
     counts = {name: db.scalar(select(func.count()).select_from(model)) for name, model in [
         ("documents", Document), ("datasets", Dataset), ("dataset_records", DatasetRecord), ("media", Media),
         ("expeditions", Expedition), ("stations", Station), ("researchers", Researcher), ("topics", Topic),
         ("users", User), ("links", ResourceLink)]}
-    counts.update(index=idx, activities=n_activities)
+    counts.update(index=idx, activities=n_activities, v3=v3)
     return counts
 
 

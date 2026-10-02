@@ -2,11 +2,11 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.security import create_access_token, get_current_user, verify_password
+from app.auth.security import clear_session_cookie, create_access_token, get_current_user, set_session_cookie, verify_password
 from app.core.config import settings
 from app.core.database import get_db
 from app.models import Role, User
@@ -24,10 +24,13 @@ DEMO_EMAILS = {
 }
 
 
-def _issue(db: Session, user: User, how: str) -> dict:
+def _issue(db: Session, user: User, how: str, response: Response | None = None) -> dict:
     user.last_login = datetime.now(timezone.utc)
     audit(db, user, "login", "user", user.id, f"Signed in ({how})")
-    return {"access_token": create_access_token(user), "token_type": "bearer", "user": user_out(user)}
+    token = create_access_token(user)
+    if response is not None:
+        set_session_cookie(response, token)  # HttpOnly cookie in addition to the (unchanged) bearer token
+    return {"access_token": token, "token_type": "bearer", "user": user_out(user)}
 
 
 _failures: dict[tuple[str, str], deque] = defaultdict(deque)
@@ -43,7 +46,7 @@ def _throttled(key: tuple[str, str]) -> bool:
 
 
 @router.post("/login", response_model=TokenOut)
-def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+def login(body: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     email = body.email.lower().strip()
     key = (request.client.host if request.client else "-", email)
     if _throttled(key):
@@ -58,17 +61,17 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     _failures.pop(key, None)
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This account has been disabled by an administrator.")
-    return _issue(db, user, "password")
+    return _issue(db, user, "password", response)
 
 
 @router.post("/demo-login", response_model=TokenOut)
-def demo_login(body: DemoLoginRequest, db: Session = Depends(get_db)):
+def demo_login(body: DemoLoginRequest, response: Response, db: Session = Depends(get_db)):
     if not settings.DEMO_MODE:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Demo accounts are disabled on this deployment.")
     user = db.scalar(select(User).where(User.email == DEMO_EMAILS[body.role]))
     if not user:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Demo data has not been seeded yet.")
-    return _issue(db, user, "demo account")
+    return _issue(db, user, "demo account", response)
 
 
 @router.get("/demo-accounts")
@@ -91,6 +94,7 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.post("/logout")
-def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def logout(response: Response, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     audit(db, user, "logout", "user", user.id, "Signed out")
+    clear_session_cookie(response)
     return {"ok": True}

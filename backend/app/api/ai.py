@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.security import get_current_user_optional
 from app.core.database import get_db
+from app.core.ratelimit import rate_limit
 from app.models import AIQuery, Document, User
-from app.rag.answer import ask
+from app.rag.answer import AUDIENCES, ask
 from app.rag.embeddings import get_provider, provider_description
 from app.rag.indexer import vector_backend_name
 from app.rag.llm import ai_status
@@ -29,9 +30,9 @@ DOC_EXAMPLES = ["Explain the key factors discussed in this resource.", "Summariz
                 "Explain this research paper for a student."]
 
 
-@router.post("/ask")
+@router.post("/ask", dependencies=[Depends(rate_limit("ai"))])
 def ask_endpoint(body: AskRequest, db: Session = Depends(get_db), user: User | None = Depends(get_current_user_optional)):
-    result = ask(db, user, body.question, body.document_slug, body.mode)
+    result = ask(db, user, body.question, body.document_slug, body.mode, body.audience)
     track(db, "ai_question", "document" if body.document_slug else "", None, user,
           {"mode": result["mode"], "evidence": result["evidence_status"]})
     return result
@@ -67,5 +68,10 @@ def feedback(body: FeedbackRequest, db: Session = Depends(get_db)):
 @router.get("/status")
 def status(db: Session = Depends(get_db)):
     provider = get_provider(db)
+    from app.ingestion.ocr import status as ocr_status
+    from app.services.visual import status as visual_status
+
     return {**ai_status(), "embedding_description": provider_description(provider.name) if provider else "Index not built",
-            "vector_backend": vector_backend_name(), "examples": EXAMPLES, "document_examples": DOC_EXAMPLES}
+            "vector_backend": vector_backend_name(), "examples": EXAMPLES, "document_examples": DOC_EXAMPLES,
+            "visual_search": visual_status(db), "ocr": ocr_status(),
+            "audiences": [{"key": k, "label": k.title(), "description": v} for k, v in AUDIENCES.items()]}

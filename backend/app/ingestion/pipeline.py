@@ -14,7 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.models import Document, IngestionJob, ResourceTopic, Topic, User
+from app.ingestion.ocr import extract_pdf_with_ocr
+from app.models import Document, IngestionJob, ResourceTopic, ResourceVersion, Topic, User
+from app.services import versions
+from app.services.duplicates import find_doi, sha256_file
+from app.services.storage import mirror
 from app.rag.embeddings import get_provider
 from app.rag.indexer import index_document, vector_backend_name
 from app.services.audit import audit, notify
@@ -28,7 +32,7 @@ ALLOWED = {
     ".md": ("text/markdown", []),
 }
 STEPS = [("upload", "Upload document"), ("validate", "Validate file"), ("extract", "Extract text"),
-         ("metadata", "Extract metadata"), ("chunk", "Create document chunks"), ("embed", "Generate embeddings"),
+         ("ocr", "OCR scanned pages"), ("metadata", "Extract metadata"), ("chunk", "Create document chunks"), ("embed", "Generate embeddings"),
          ("store", "Store vectors"), ("index", "Index document"), ("ready", "Mark repository status")]
 
 REGION_KEYWORDS = {
@@ -143,30 +147,73 @@ def run_ingestion(job_id: int, path: str, ext: str, overrides: dict, user_id: in
         _step(db, job, "upload", "done", f"{Path(path).name} received")
         _step(db, job, "validate", "done", f"{ext.upper().lstrip('.')} — {Path(path).stat().st_size / 1024:.0f} KB, signature and size checked")
         _step(db, job, "extract", "running")
-        text, pages, meta = extract_text(Path(path), ext)
+        ocr_report: dict = {"status": "not_needed", "pages_ocr": []}
+        if ext == ".pdf":
+            text, pages, meta, ocr_report = extract_pdf_with_ocr(Path(path))
+            native = pages - len(ocr_report.get("pages_needing_ocr", []))
+            _step(db, job, "extract", "done", f"{pages} page(s); embedded text on {native} page(s)")
+            job.ocr_status = ocr_report["status"]
+            if ocr_report["status"] == "not_needed":
+                _step(db, job, "ocr", "skipped", "Not needed — every page has embedded text")
+            elif ocr_report["status"] == "unavailable":
+                _step(db, job, "ocr", "skipped", f"{len(ocr_report['pages_needing_ocr'])} scanned page(s) found but OCR is "
+                      "not available on this server (install tesseract-ocr or set OCR_ENABLED=true)")
+            else:
+                _step(db, job, "ocr", "done" if ocr_report["status"] != "failed" else "failed",
+                      f"{ocr_report.get('engine') or 'tesseract'}: text recognised on page(s) "
+                      f"{', '.join(map(str, ocr_report['pages_ocr'])) or 'none'}"
+                      + (f"; failed on {', '.join(map(str, ocr_report['pages_failed']))}" if ocr_report.get("pages_failed") else ""))
+        else:
+            text, pages, meta = extract_text(Path(path), ext)
+            _step(db, job, "extract", "done", f"{pages} page(s), {len(text):,} characters")
+            _step(db, job, "ocr", "skipped", "Not applicable to text files")
         if len(text.strip()) < 200:
-            raise ValidationError("No extractable text found (scanned PDFs need OCR, which is not enabled in this prototype).")
-        _step(db, job, "extract", "done", f"{pages} page(s), {len(text):,} characters")
+            if ocr_report.get("status") == "unavailable":
+                raise ValidationError("No extractable text found. This looks like a scanned PDF and OCR is not available on this server.")
+            raise ValidationError("No extractable text found (the PDF may be scanned and OCR could not read it).")
         md = infer_metadata(text, Path(path).name, meta, db)
         for k, v in overrides.items():
-            if v:
+            if v and k != "update_slug":
                 md[k] = v
-        _step(db, job, "metadata", "done", f"Title, year {md['year']}, region {md['region']}, {len(md['keywords'])} keywords")
-        slug = slugify(md["title"])
-        if db.scalar(select(Document).where(Document.slug == slug)):
-            slug = f"{slug}-{job.id}"
-        doc = Document(slug=slug, title=md["title"], doc_type=md.get("doc_type") or "Technical Report",
-                       abstract=md["abstract"], content=text, authors=md.get("authors") or [user.name],
-                       institution=user.institution, region=md["region"], year=int(md["year"]),
-                       keywords=md["keywords"], source=f"Uploaded by {user.name}", file_name=Path(path).name,
-                       file_path=path, page_count=pages, status="processing", visibility=md.get("visibility") or "public",
-                       is_demo=False, uploaded_by=user.id)
-        db.add(doc)
-        db.flush()
-        for tid in md["topics"]:
-            db.add(ResourceTopic(resource_type="document", resource_id=doc.id, topic_id=tid))
+        doi = find_doi(text[:20000])
+        _step(db, job, "metadata", "done", f"Title, year {md['year']}, region {md['region']}, {len(md['keywords'])} keywords"
+              + (f", DOI {doi}" if doi else ""))
+        content_hash = sha256_file(path)
+        target = db.scalar(select(Document).where(Document.slug == overrides["update_slug"])) if overrides.get("update_slug") else None
+        if target is not None:
+            # "Update existing": the current state is preserved in the version history before the new file replaces it
+            versions.record(db, "document", target, "Snapshot before new file", target.status, user, commit=False)
+            prev = db.scalar(select(ResourceVersion).where(ResourceVersion.resource_type == "document",
+                                                          ResourceVersion.resource_id == target.id)
+                             .order_by(ResourceVersion.version.desc()))
+            if prev is not None:
+                prev.snapshot = {**(prev.snapshot or {}), "file_path": target.file_path,
+                                 "content_archive": (target.content or "")[:200_000]}
+            doc = target
+            doc.content, doc.abstract, doc.file_name, doc.file_path = text, md["abstract"], Path(path).name, path
+            doc.page_count, doc.status, doc.keywords = pages, "processing", md["keywords"]
+            doc.content_hash, doc.ocr_status, doc.ocr_pages = content_hash, ocr_report["status"], ocr_report.get("pages_ocr", [])
+            doc.doi = doc.doi or doi
+            change = f"New document uploaded ({Path(path).name})"
+        else:
+            slug = slugify(md["title"])
+            if db.scalar(select(Document).where(Document.slug == slug)):
+                slug = f"{slug}-{job.id}"
+            doc = Document(slug=slug, title=md["title"], doc_type=md.get("doc_type") or "Technical Report",
+                           abstract=md["abstract"], content=text, authors=md.get("authors") or [user.name],
+                           institution=user.institution, region=md["region"], year=int(md["year"]),
+                           keywords=md["keywords"], source=f"Uploaded by {user.name}", file_name=Path(path).name,
+                           file_path=path, page_count=pages, status="processing", visibility=md.get("visibility") or "public",
+                           is_demo=False, uploaded_by=user.id, content_hash=content_hash, doi=doi,
+                           ocr_status=ocr_report["status"], ocr_pages=ocr_report.get("pages_ocr", []))
+            db.add(doc)
+            db.flush()
+            for tid in md["topics"]:
+                db.add(ResourceTopic(resource_type="document", resource_id=doc.id, topic_id=tid))
+            change = f"Uploaded ({Path(path).name})" + (f" · OCR {ocr_report['status']}" if ocr_report["status"] != "not_needed" else "")
         job.document_id = doc.id
         db.commit()
+        mirror(path)
         _step(db, job, "chunk", "running")
         n = index_document(db, doc)
         _step(db, job, "chunk", "done", f"{n} passages with page provenance")
@@ -177,6 +224,10 @@ def run_ingestion(job_id: int, path: str, ext: str, overrides: dict, user_id: in
         doc.status = "indexed"
         job.status = "completed"
         db.commit()
+        from app.services.provenance import ensure_for
+
+        ensure_for(db, "document", doc)
+        versions.record(db, "document", doc, change, "user_uploaded", user)
         _step(db, job, "ready", "done", "Indexed and searchable")
         audit(db, user, "upload", "document", doc.slug, f"Ingested {Path(path).name} ({n} passages)")
         notify(db, "Document processing completed", f"“{doc.title}” is indexed and searchable.",

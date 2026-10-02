@@ -9,3 +9,5 @@ backend/storage/
 frontend/e2e/shots/
 .pytest_cache/
 .DS_Store
+.model_cache/
+backend/.model_cache/

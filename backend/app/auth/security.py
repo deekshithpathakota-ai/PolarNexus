@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
@@ -58,13 +58,24 @@ def permissions_for(role: str) -> list[str]:
     return ROLE_PERMISSIONS.get(role, ROLE_PERMISSIONS["public"])
 
 
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+CSRF_HEADER = "x-polarnexus-client"
+
+
 def get_current_user_optional(
-    creds: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)
+    request: Request, creds: HTTPAuthorizationCredentials | None = Depends(bearer), db: Session = Depends(get_db)
 ) -> User | None:
-    if not creds:
+    token = creds.credentials if creds else None
+    if not token and settings.AUTH_COOKIE_ENABLED:
+        # HttpOnly session cookie (v3). Browsers attach it automatically, so state-changing requests that rely on
+        # the cookie alone must also carry a custom header — a cross-site form cannot set it (CSRF protection).
+        token = request.cookies.get(settings.AUTH_COOKIE_NAME)
+        if token and request.method not in SAFE_METHODS and not request.headers.get(CSRF_HEADER):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Missing client header for a cookie-authenticated request.")
+    if not token:
         return None
     try:
-        payload = jwt.decode(creds.credentials, settings.JWT_SECRET, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[ALGORITHM])
         user_id = int(payload.get("sub", 0))
     except (JWTError, ValueError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired or invalid. Please sign in again.")
@@ -94,3 +105,14 @@ def require_permission(permission: str):
 
 def can(user: User | None, permission: str) -> bool:
     return permission in permissions_for(user.role_name if user else "public")
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    if not settings.AUTH_COOKIE_ENABLED:
+        return
+    response.set_cookie(settings.AUTH_COOKIE_NAME, token, max_age=settings.JWT_EXPIRE_MINUTES * 60, httponly=True,
+                        secure=settings.is_production, samesite="lax", path="/")
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(settings.AUTH_COOKIE_NAME, path="/", httponly=True, secure=settings.is_production, samesite="lax")

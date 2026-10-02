@@ -161,16 +161,19 @@ def _pick_sentences(question: str, evidence: list[Evidence], intent: str | None,
     return [(s, n) for _, n, _, s in chosen]
 
 
-def _compose_extractive(question: str, evidence: list[Evidence], intent: str | None, doc_title: str | None) -> str:
-    focused = intent in {"finding", "method", "limitation", "summary"}
+def _compose_extractive(question: str, evidence: list[Evidence], intent: str | None, doc_title: str | None,
+                        audience: str | None = None) -> str:
+    focused = intent in {"finding", "method", "limitation", "summary"} or audience == "researcher"
     sentences = _pick_sentences(question, evidence, intent, max_sentences=7 if focused else 5,
-                                per_source=5 if focused and doc_title else 2)
+                                per_source=5 if focused and doc_title else 3 if audience == "researcher" else 2)
     if not sentences:
         return ""
     used: set[str] = set()
-    student = intent == "student"
+    student = intent == "student" or audience in {"student", "public"}
     lead = (f"According to *{doc_title}*" if doc_title else "Based on the PolarNexus repository")
-    if intent == "method":
+    if student:
+        lead = "**In simple terms**" + (f" — from *{doc_title}*:" if doc_title else ":")
+    elif intent == "method":
         lead += ", the methodology is described as follows:"
     elif intent == "limitation":
         lead += ", the following limitations are noted:"
@@ -178,6 +181,8 @@ def _compose_extractive(question: str, evidence: list[Evidence], intent: str | N
         lead += ", the key findings are:"
     elif student:
         lead = "**In simple terms**" + (f" — from *{doc_title}*:" if doc_title else ":")
+    elif audience == "researcher":
+        lead += " (passages quoted verbatim; see the evidence panel for sections and pages):"
     else:
         lead += ":"
     if intent in {"finding", "limitation", "method"} or len(sentences) >= 4:
@@ -185,20 +190,48 @@ def _compose_extractive(question: str, evidence: list[Evidence], intent: str | N
     else:
         body = " ".join(f"{simplify(s, used) if student else s} [{n}]" for s, n in sentences)
     out = f"{lead}\n\n{body}"
-    if student:
+    if audience == "teacher":
+        out += "\n\n" + _teaching_block(sentences, question)
+    if student and audience != "public":
         glossary = glossary_for(" ".join(s for s, _ in sentences))
         if glossary:
             out += "\n\n**Words to know**\n" + "\n".join(f"- {g}" for g in glossary)
     return out
 
 
-def _llm_answer(question: str, evidence: list[Evidence], doc_title: str | None, intent: str | None) -> str | None:
+AUDIENCES = {
+    "researcher": "Write for a polar scientist: precise technical language, mention methods and caveats stated in the evidence.",
+    "teacher": "Write for a school teacher preparing a lesson: a clear explanation, then 2-3 teaching points and one "
+               "discussion question, all drawn only from the evidence.",
+    "student": "Write for a school student: short sentences, explain technical words.",
+    "public": "Write for an interested member of the public: plain language, no jargon.",
+}
+
+
+def _teaching_block(sentences: list[tuple[str, int]], question: str) -> str:
+    """Teacher mode without an LLM: teaching points are the cited sentences themselves (shortened at a clause
+    boundary, never reworded with new facts) plus question prompts that only point back at the sources."""
+    pts = []
+    for s, n in sentences[:3]:
+        clause = re.split(r"(?<=[a-z]),\s(?:which|while|whereas|although)\s", s)[0].rstrip(".")
+        pts.append(f"- {clause}. [{n}]")
+    nums = sorted({n for _, n in sentences})
+    qs = [f"- Which observations in source [{nums[0]}] support this explanation?"]
+    if len(nums) > 1:
+        qs.append(f"- How do sources [{nums[0]}] and [{nums[1]}] complement each other?")
+    qs.append("- What would you need to measure to test this yourself?")
+    return "**Teaching points** (quoted from the sources)\n" + "\n".join(pts) + "\n\n**Discussion questions**\n" + "\n".join(qs)
+
+
+def _llm_answer(question: str, evidence: list[Evidence], doc_title: str | None, intent: str | None,
+                audience_mode: str | None = None) -> str | None:
     llm = get_llm()
     if not llm:
         return None
-    blocks = "\n\n".join(f"[{e.n}] {e.title} — {e.chunk.section}\n{e.chunk.text}" for e in evidence)
-    audience = ("Write for a school student: short sentences, explain technical words." if intent == "student"
-                else "Write for an educated non-specialist.")
+    blocks = "\n\n".join(f"[{e.n}] {e.title} — {e.chunk.section} (p. {e.chunk.page})\n{e.chunk.text}" for e in evidence)
+    audience = AUDIENCES.get(audience_mode or "") or (
+        "Write for a school student: short sentences, explain technical words." if intent == "student"
+        else "Write for an educated non-specialist.")
     system = (
         "You are PolarNexus AI, an evidence-grounded assistant for a polar-science knowledge repository. "
         "Answer ONLY from the numbered evidence passages provided. Cite every factual sentence with the passage "
@@ -211,6 +244,9 @@ def _llm_answer(question: str, evidence: list[Evidence], doc_title: str | None, 
     return llm.complete(system, user, max_tokens=650)
 
 
+_removed = {"n": 0}
+
+
 def _validate_citations(answer: str, evidence: list[Evidence]) -> tuple[str, set[int]]:
     valid = {e.n for e in evidence}
     cited: set[int] = set()
@@ -220,6 +256,7 @@ def _validate_citations(answer: str, evidence: list[Evidence]) -> tuple[str, set
         if n in valid:
             cited.add(n)
             return m.group(0)
+        _removed["n"] += 1
         return ""  # drop any citation that does not map to retrieved evidence
 
     cleaned = re.sub(r"\[(\d+)\]", repl, answer)
@@ -327,8 +364,10 @@ def _themes_answer(cat: Catalog, question: str) -> dict | None:
 
 
 def ask(db: Session, user: User | None, question: str, document_slug: str | None = None,
-        mode: str = "hybrid") -> dict:
+        mode: str = "hybrid", audience: str | None = None) -> dict:
     t0 = time.perf_counter()
+    _removed["n"] = 0
+    audience = audience if audience in AUDIENCES else None
     question = question.strip()
     cat = build_catalog(db, user)
     compound = COMPOUND_RE.match(question) if not document_slug else None
@@ -414,11 +453,11 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
             evidence = _number_sources(cat, chosen[:6], scores)
 
             if evidence:
-                curated = None if get_llm() or compound else match_curated(question, doc.slug if doc else None)
+                curated = None if get_llm() or compound or audience else match_curated(question, doc.slug if doc else None)
                 llm_text = None
                 if not curated:
                     try:
-                        llm_text = _llm_answer(rq, evidence, doc.title if doc else None, intent)
+                        llm_text = _llm_answer(rq, evidence, doc.title if doc else None, intent, audience)
                     except LLMUnavailable:
                         notice = "The AI model is temporarily unavailable — showing an extractive answer built from repository passages."
                 if curated:
@@ -438,7 +477,7 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
                     else:
                         answer_text, gen_mode = llm_text, "llm"
                 if not answer_text and evidence:
-                    answer_text = _compose_extractive(rq, evidence, intent, doc.title if doc else None)
+                    answer_text = _compose_extractive(rq, evidence, intent, doc.title if doc else None, audience)
                     gen_mode = "extractive"
 
     # ---- 3. Validate citations and decide evidence status
@@ -509,11 +548,14 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
     sources = [_source_entry(cat, e) for e in evidence]
     if status == "insufficient":
         related_groups = {}
+    strength, basis = _strength(cat, status, sources, bool(doc and intent_sections))
     types_covered = sorted({s["resource_type"] for s in sources})
     result.update(
         answer=answer_text, mode=gen_mode, mode_label=labels[gen_mode], evidence_status=status,
         evidence_label=evidence_labels[status], sources=sources, related=related, notice=notice,
-        related_groups=related_groups,
+        related_groups=related_groups, evidence_strength=strength,
+        evidence_strength_label=STRENGTH_LABELS[strength], evidence_basis=basis, audience=audience,
+        pipeline=_pipeline(intent, gen_mode, status, len(sources), max(len(hits), len(sources)), _removed["n"]),
         synthesis={"compound": bool(compound), "answered_part": rq if compound else None,
                    "list_type": list_type, "evidence_types": types_covered,
                    "related_types": list(related_groups)},
@@ -522,8 +564,57 @@ def ask(db: Session, user: User | None, question: str, document_slug: str | None
     q = AIQuery(user_id=user.id if user else None, question=question[:2000], document_id=doc.id if doc else None,
                 mode=gen_mode, evidence_status=status, answer=answer_text[:8000],
                 sources=[{"n": s["n"], "slug": s["slug"], "section": s["section"]} for s in sources],
-                duration_ms=round((time.perf_counter() - t0) * 1000, 1))
+                duration_ms=round((time.perf_counter() - t0) * 1000, 1), evidence_strength=strength,
+                audience=audience or "", citations_removed=_removed["n"])
     db.add(q)
     db.commit()
     result["query_id"] = q.id
     return result
+
+
+STRENGTH_LABELS = {
+    "strong": "Strong evidence — several independent repository passages agree",
+    "moderate": "Moderate evidence — supported, but by a single record or few passages",
+    "limited": "Limited evidence — the passages do not cover every part of the question",
+    "insufficient": "Insufficient evidence",
+}
+
+
+def _strength(cat: Catalog, status: str, sources: list[dict], doc_scoped: bool) -> tuple[str, dict]:
+    """Finer, rule-based evidence strength (not a probability) plus the provenance basis of the cited sources."""
+    from app.services.provenance import AUTHORITATIVE_STATUSES, DEMO_STATUSES
+
+    seen: dict[tuple[str, int], str] = {}
+    for s in sources:
+        card = cat.card(s["resource_type"], s["resource_id"]) or {}
+        seen[(s["resource_type"], s["resource_id"])] = card.get("verification", "unverified")
+        s["verification"] = card.get("verification", "unverified")
+        s["verification_label"] = card.get("verification_label", "Unverified")
+    auth = sum(1 for v in seen.values() if v in AUTHORITATIVE_STATUSES)
+    demo = sum(1 for v in seen.values() if v in DEMO_STATUSES)
+    basis = {"records": len(seen), "authoritative": auth, "demonstration": demo,
+             "other": len(seen) - auth - demo, "note": ""}
+    if seen and demo == len(seen):
+        basis["note"] = ("Every supporting passage comes from prototype demonstration records — the answer shows how the "
+                         "system works, not verified science.")
+    elif demo:
+        basis["note"] = f"{demo} of {len(seen)} supporting records are demonstration data."
+    if status == "insufficient":
+        return "insufficient", basis
+    if status == "limited":
+        return "limited", basis
+    if len(seen) >= 2 or doc_scoped:
+        return "strong", basis
+    return "moderate", basis
+
+
+def _pipeline(intent, gen_mode, status, used, considered, removed) -> list[dict]:
+    """The steps this answer actually went through — shown in the evidence panel."""
+    return [
+        {"step": "Intent detection", "detail": intent or "general question"},
+        {"step": "Hybrid retrieval", "detail": f"{considered} passage(s) considered"},
+        {"step": "Evidence ranking", "detail": f"{used} passage(s) selected"},
+        {"step": "Evidence sufficiency check", "detail": "insufficient — answer withheld" if status == "insufficient" else status},
+        {"step": "Generation", "detail": gen_mode},
+        {"step": "Citation validation", "detail": f"{removed} invalid citation marker(s) removed" if removed else "all citation markers map to retrieved passages"},
+    ]

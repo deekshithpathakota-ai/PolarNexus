@@ -221,6 +221,8 @@ TYPE_FILTER_MAP = {
     "Expedition Report": lambda c: c["type"] == "document" and c["kind"] == "Expedition Report",
     "Educational Resource": lambda c: c["type"] == "document" and c["kind"] == "Educational Resource",
     "News / Outreach": lambda c: c["type"] == "document" and c["kind"] == "News / Outreach",
+    "Policy / Legislation": lambda c: c["type"] == "document" and c["kind"] == "Policy / Legislation",
+    "Institutional Resource": lambda c: c["type"] == "document" and c["kind"] == "Institutional Resource",
     "Dataset": lambda c: c["type"] == "dataset",
     "Image": lambda c: c["type"] == "media" and c["kind"] == "Image",
     "Video": lambda c: c["type"] == "media" and c["kind"] == "Video",

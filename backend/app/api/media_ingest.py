@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth.security import can, get_current_user, get_current_user_optional, require_permission
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.ratelimit import rate_limit
 from app.ingestion import media as mi
 from app.models import Expedition, Media, Researcher, Station, Topic, User
 from app.services.audit import audit
@@ -70,13 +71,14 @@ def _get(db: Session, slug: str) -> Media:
     return m
 
 
-@router.post("/media/upload")
+@router.post("/media/upload", dependencies=[Depends(rate_limit("upload"))])
 async def upload_media(background: BackgroundTasks, file: UploadFile = File(...), title: str = Form(""),
                        description: str = Form(""), category: str = Form("Other"), region: str = Form("Antarctic"),
                        year: str = Form(""), tags: str = Form(""), credit: str = Form(""), license: str = Form(""),
                        location: str = Form(""), station: str = Form(""), expedition: str = Form(""),
                        researcher: str = Form(""), topics: str = Form(""), visibility: str = Form("public"),
                        captured_at: str = Form(""), transcript: UploadFile | None = File(None),
+                       alt_text: str = Form(""), caption: str = Form(""),
                        db: Session = Depends(get_db), user: User = Depends(require_permission("upload"))):
     original = file.filename or "upload"
     try:
@@ -149,12 +151,60 @@ async def upload_media(background: BackgroundTasks, file: UploadFile = File(...)
               tags=[t.strip()[:40] for t in tags.split(",") if t.strip()][:20], scene="ice", file_path=str(dest),
               visibility=visibility, is_demo=False, status="indexed", filename=safe, mime_type=mime, size_bytes=size,
               location=location.strip()[:255], captured_at=cap, processing_status="processing",
-              processing_steps=mi.initial_steps(kind), uploaded_by=user.id)
+              processing_steps=mi.initial_steps(kind), uploaded_by=user.id,
+              alt_text=alt_text.strip()[:1000], caption=caption.strip()[:2000])
     db.add(m)
     db.commit()
     links = {"station": station or None, "expedition": expedition or None, "researcher": researcher or None, "topics": topic_slugs}
     background.add_task(mi.process_media, m.id, transcript_path, links, user.id)
     return media_out(m)
+
+
+@router.get("/media/{slug}/frames/{index}")
+def media_frame(slug: str, index: int, db: Session = Depends(get_db), user: User | None = Depends(get_current_user_optional)):
+    """A representative video key frame (used to show *where* in a video a visual match occurs)."""
+    from app.models import VisualEmbedding
+
+    m = _get(db, slug)
+    if not _visible(db, m, user):
+        raise HTTPException(404, "Media item not found.")
+    rows = db.scalars(select(VisualEmbedding).where(VisualEmbedding.media_id == m.id, VisualEmbedding.frame_path != "")
+                      .order_by(VisualEmbedding.frame_seconds)).all()
+    if index < 0 or index >= len(rows):
+        raise HTTPException(404, "Frame not found.")
+    return _serve(_within_storage(rows[index].frame_path), "image/jpeg")
+
+
+@router.get("/media/{slug}/captions")
+def media_captions(slug: str, db: Session = Depends(get_db), user: User | None = Depends(get_current_user_optional)):
+    m = _get(db, slug)
+    if not _visible(db, m, user):
+        raise HTTPException(404, "Media item not found.")
+    path = _within_storage(m.captions_path)
+    if not path:
+        raise HTTPException(404, "No caption track is available for this video.")
+    return FileResponse(path, media_type="text/vtt", headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600"})
+
+
+@router.post("/media/check-duplicates")
+async def media_duplicates(file: UploadFile = File(...), title: str = Form(""), db: Session = Depends(get_db),
+                           user: User = Depends(require_permission("upload"))):
+    import hashlib
+
+    from app.services.duplicates import check_media
+
+    h = hashlib.sha256()
+    size = 0
+    while True:
+        chunk = await file.read(CHUNK)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > settings.MAX_VIDEO_MB * 1024 * 1024:
+            raise HTTPException(413, "File too large.")
+        h.update(chunk)
+    cands = check_media(db, content_hash=h.hexdigest(), title=title, filename=file.filename or "")
+    return {"duplicates": cands, "potential_duplicate": bool(cands)}
 
 
 @router.get("/media/{slug}/processing")

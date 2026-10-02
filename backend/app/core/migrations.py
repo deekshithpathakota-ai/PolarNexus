@@ -14,14 +14,14 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import inspect, text
+from sqlalchemy import Boolean, inspect, text
 from sqlalchemy.engine import Engine
 
 from app.core.database import Base
 
 log = logging.getLogger("polarnexus.migrations")
 
-SCHEMA_VERSION = "2026.10-v2"
+SCHEMA_VERSION = "2026.10-v3"
 
 
 def _ensure_registry(engine: Engine) -> None:
@@ -58,7 +58,10 @@ def add_missing_columns(engine: Engine) -> list[str]:
             if col.server_default is not None and hasattr(col.server_default, "arg"):
                 arg = col.server_default.arg
                 val = arg.text if hasattr(arg, "text") else str(arg)
-                ddl += f" DEFAULT '{val}'" if not val.replace(".", "").isdigit() else f" DEFAULT {val}"
+                if isinstance(col.type, Boolean) or not val.replace(".", "").isdigit():
+                    ddl += f" DEFAULT '{val}'"  # PostgreSQL rejects an integer default on a boolean column
+                else:
+                    ddl += f" DEFAULT {val}"
             with engine.begin() as conn:
                 conn.execute(text(ddl))
             added.append(f"{table.name}.{col.name}")

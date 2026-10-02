@@ -26,6 +26,8 @@ from app.models import (
 
 VERIFICATION = {
     "verified": ("Verified", "Facts checked against a named, public source."),
+    "public_source": ("Public source", "Real, publicly accessible record imported with its original source, licence and link. "
+                                       "Metadata recorded as published; not independently verified by an administrator."),
     "partner_source": ("Partner source", "Supplied by a partner institution under an agreement."),
     "user_uploaded": ("User uploaded", "Added by a signed-in user; not yet verified by an administrator."),
     "pending_review": ("Pending review", "Awaiting verification or editorial review."),
@@ -35,12 +37,15 @@ VERIFICATION = {
 }
 DEMO_STATUSES = {"demo_data", "synthetic_demo"}
 TRUSTED_STATUSES = {"verified", "partner_source"}
+# Real-world records (used by search ranking and evidence-strength assessment). Demo/synthetic never qualify.
+AUTHORITATIVE_STATUSES = {"verified", "partner_source", "public_source"}
 OFFICIAL_SOURCE_TYPE = "Official public information"
 
 # UI filter label -> predicate on a provenance dict
 FILTERS = {
     "Verified": lambda p: p["verification_status"] == "verified",
     "Official": lambda p: p["source_type"] == OFFICIAL_SOURCE_TYPE and p["verification_status"] == "verified",
+    "Public Source": lambda p: p["verification_status"] == "public_source",
     "Partner": lambda p: p["verification_status"] == "partner_source",
     "Uploaded": lambda p: p["verification_status"] == "user_uploaded",
     "Demo": lambda p: p["verification_status"] == "demo_data",

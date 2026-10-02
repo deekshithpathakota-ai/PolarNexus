@@ -28,14 +28,26 @@ GLOSSARY: list[tuple[str, str, str]] = [
 
 def simplify(sentence: str, used_terms: set[str] | None = None) -> str:
     out = sentence
+
+    def is_name(m, pat: str) -> bool:
+        # A lower-case glossary term matched in capitals mid-sentence is part of a proper name or title
+        # (e.g. "Antarctic Sea Ice Variability Study") — never reword it.
+        lower_pat = re.sub(r"\\b", "", pat)[:1].islower()
+        return lower_pat and m.start() > 0 and m.group(0)[:1].isupper()
+
+    def keep_names(rep_text: str, pat: str):
+        return lambda m: m.group(0) if is_name(m, pat) else rep_text
+
     for pat, rep, _ in GLOSSARY:
         if used_terms is not None and pat in used_terms:
             # only expand a term the first time it appears
             short = re.sub(r"\s*\(.*\)$", "", rep)
-            out = re.sub(pat, short if short else rep, out, flags=re.IGNORECASE)
+            out = re.sub(pat, keep_names(short if short else rep, pat), out, flags=re.IGNORECASE)
             continue
-        if re.search(pat, out, flags=re.IGNORECASE):
-            out = re.sub(pat, rep, out, count=1, flags=re.IGNORECASE)
+        hit = next((m for m in re.finditer(pat, out, flags=re.IGNORECASE)
+                    if not is_name(m, pat)), None)
+        if hit:
+            out = out[:hit.start()] + rep + out[hit.end():]
             if used_terms is not None:
                 used_terms.add(pat)
     out = re.sub(r"^(First|Second|Third|Fourth|Fifth),\s*", "", out)

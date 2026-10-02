@@ -9,7 +9,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import activities, admin, ai, auth, discovery, ingestion, knowledge, media_ingest, misc, workflow
+from app.api import (
+    activities,
+    admin,
+    ai,
+    auth,
+    campaigns,
+    datasets_ingest,
+    discovery,
+    ingestion,
+    knowledge,
+    media_ingest,
+    misc,
+    scientific,
+    stories,
+    workflow,
+)
 from app.core.config import settings
 from app.core.database import Base, SessionLocal, detect_vector_backend, engine
 
@@ -25,7 +40,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(
     lifespan=lifespan,
     title="PolarNexus API",
-    version="1.0.0",
+    version="3.0.0",
     description="Evidence-grounded polar knowledge repository, discovery, AI assistance and outreach workflow (SIH26063 prototype).",
 )
 
@@ -95,6 +110,13 @@ def startup() -> None:
             except Exception as exc:  # never block start-up on an optional data upgrade
                 log.warning("v2 data upgrade skipped: %s", exc)
     with SessionLocal() as db:
+        from app.seed.v3 import upgrade_v3
+
+        try:
+            upgrade_v3(db)
+        except Exception as exc:  # additive; never blocks start-up
+            log.warning("v3 data upgrade skipped: %s", exc)
+    with SessionLocal() as db:
         from app.rag.indexer import ensure_fulltext_index
 
         try:
@@ -103,8 +125,10 @@ def startup() -> None:
             log.warning("Could not create full-text index: %s", exc)
 
 
-for r in (auth.router, knowledge.router, misc.router, ai.router, workflow.router, ingestion.router, admin.router,
-          activities.router, media_ingest.router, discovery.router):
+# datasets_ingest is registered before knowledge so /api/datasets/ingest is not captured by /api/datasets/{slug}
+for r in (auth.router, datasets_ingest.router, knowledge.router, misc.router, ai.router, workflow.router, ingestion.router,
+          admin.router, activities.router, media_ingest.router, discovery.router, stories.router, campaigns.router,
+          scientific.router):
     app.include_router(r)
 
 

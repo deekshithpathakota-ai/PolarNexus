@@ -37,12 +37,12 @@ TRANSCRIPT_EXT = {".vtt", ".srt", ".txt"}
 IMAGE_STEPS = [("upload", "Upload"), ("validate", "Validate file"), ("store", "Store file"),
                ("metadata", "Extract metadata"), ("thumbnail", "Generate thumbnail"), ("exif", "Extract EXIF"),
                ("searchable", "Generate searchable metadata"), ("associate", "Associate with entities"),
-               ("index", "Index"), ("ready", "Repository")]
+               ("visual", "Visual embedding (CLIP)"), ("index", "Index"), ("ready", "Repository")]
 VIDEO_STEPS = [("upload", "Upload"), ("validate", "Validate file"), ("store", "Store file"),
                ("thumbnail", "Generate thumbnail"), ("metadata", "Extract metadata"), ("audio", "Extract audio"),
                ("transcript", "Speech-to-text / transcript"), ("index", "Index transcript"),
                ("searchable", "Generate searchable metadata"), ("associate", "Associate with entities"),
-               ("ready", "Repository")]
+               ("visual", "Key frames + visual embeddings"), ("ready", "Repository")]
 
 
 class MediaValidationError(ValueError):
@@ -227,8 +227,8 @@ def _iso6709(s: str | None) -> tuple[float, float] | None:
 
 def transcribe(audio: Path) -> str:
     with open(audio, "rb") as fh, httpx.Client(timeout=max(60.0, settings.AI_TIMEOUT_SECONDS * 4)) as client:
-        resp = client.post(f"{settings.OPENAI_BASE_URL.rstrip('/')}/audio/transcriptions",
-                           headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}"},
+        resp = client.post(f"{settings.llm_base_url}/audio/transcriptions",
+                           headers={"Authorization": f"Bearer {settings.llm_api_key}"},
                            data={"model": settings.STT_MODEL, "response_format": "text"},
                            files={"file": (audio.name, fh, "audio/wav")})
         resp.raise_for_status()
@@ -397,6 +397,21 @@ def process_media(media_id: int, transcript_path: str | None, links: dict, user_
 
         _step(db, m, "associate", "done", _associate(db, m, links))
         _step(db, m, "searchable", "done", _searchable(m))
+        from app.services import visual
+        from app.services.duplicates import sha256_file
+        from app.services.storage import mirror
+
+        if not m.content_hash:
+            m.content_hash = sha256_file(path)
+        if transcript_path and transcript_path.lower().endswith(".vtt"):
+            m.captions_path = transcript_path  # an uploaded WebVTT file doubles as the caption track
+        _step(db, m, "visual", "running")
+        vr = visual.index_media(db, m)
+        m = db.get(Media, media_id)
+        _step(db, m, "visual", {"indexed": "done", "skipped": "skipped", "failed": "failed"}[vr["status"]], vr["detail"])
+        for p_ in (m.file_path, m.thumbnail_path):
+            if p_:
+                mirror(p_)
         _step(db, m, "index", "running", processing_status="indexing")
         index_resource(db, "media", m.id)
         _step(db, m, "index", "done", "Full-text + vector index updated")

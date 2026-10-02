@@ -239,12 +239,15 @@ def _filtered_records(db, ds, date_from, date_to, variable, min_value, max_value
     return rows
 
 
+NON_NUMERIC_UNITS = {"text", "name", "id", "ISO date", "ISO datetime", "time component", "category", "identifier"}
+
+
 @router.get("/datasets/{slug}/series")
 def dataset_series(slug: str, x: str = "observed_at", y: str | None = None, group: str | None = None,
                    date_from: str | None = None, date_to: str | None = None, max_points: int = Query(800, le=3000),
                    db: Session = Depends(get_db)):
     ds = _get_or_404(db, Dataset, slug, "Dataset")
-    numeric = [v["name"] for v in ds.variables if v["unit"] not in {"text", "name", "id", "ISO date", "ISO datetime"}
+    numeric = [v["name"] for v in ds.variables if v["unit"] not in NON_NUMERIC_UNITS
                and v["name"] not in {"latitude", "longitude", "date", "timestamp"}]
     y = y or (numeric[0] if numeric else None)
     if not y:
@@ -277,7 +280,11 @@ def download_dataset(slug: str, db: Session = Depends(get_db), user: User | None
             if k not in keys:
                 keys.append(k)
     buf = io.StringIO()
-    buf.write(f"# {ds.title} — {ds.license}. SYNTHETIC DEMONSTRATION VALUES, not observations.\n")
+    p = get_provenance(db, "dataset", ds)
+    if p["verification_status"] == "synthetic_demo":
+        buf.write(f"# {ds.title} — {ds.license}. SYNTHETIC DEMONSTRATION VALUES, not observations.\n")
+    else:
+        buf.write(f"# {ds.title} — {p['verification_label']}. Source: {ds.source_url or ds.source}. Licence: {ds.license or 'not recorded'}.\n")
     w = csv.writer(buf)
     w.writerow(["observed_at", "latitude", "longitude", *keys])
     for r in rows:

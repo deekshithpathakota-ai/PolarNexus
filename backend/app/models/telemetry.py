@@ -58,4 +58,8 @@ class AIQuery(Base):
     sources: Mapped[list] = mapped_column(JSON, default=list)
     feedback: Mapped[str] = mapped_column(String(16), default="")
     duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # v3: finer evidence strength, audience mode, and citation-validation bookkeeping
+    evidence_strength: Mapped[str] = mapped_column(String(24), default="", server_default="")
+    audience: Mapped[str] = mapped_column(String(24), default="", server_default="")
+    citations_removed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)

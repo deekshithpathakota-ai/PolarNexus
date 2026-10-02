@@ -25,6 +25,7 @@ CHANNELS = {
     "linkedin": {"label": "LinkedIn", "status": "connector_ready", "note": "Prototype simulation — no LinkedIn API credentials configured."},
     "instagram": {"label": "Instagram", "status": "connector_ready", "note": "Prototype simulation — no Instagram API credentials configured."},
     "newsletter": {"label": "Newsletter", "status": "connector_ready", "note": "Prototype simulation — no mailing service configured."},
+    "education_portal": {"label": "Educational Portal", "status": "connector_ready", "note": "Prototype simulation — no educational-portal integration configured."},
 }
 
 
@@ -56,6 +57,8 @@ def document_out(d: Document, include_content: bool = False) -> dict:
         "file_name": d.file_name, "page_count": d.page_count, "status": d.status, "visibility": d.visibility,
         "is_demo": d.is_demo, "views": d.views, "created_at": iso(d.created_at), "updated_at": iso(d.updated_at),
         "url": f"/resources/{d.slug}",
+        "doi": d.doi or "", "license": d.license or "", "publisher": d.publisher or "", "source_url": d.source_url or "",
+        "ocr_status": d.ocr_status or "", "ocr_pages": d.ocr_pages or [], "metadata_only": bool(d.metadata_only),
     }
     if include_content:
         out["sections"] = [{"chunk_id": c.id, "section": c.section, "page": c.page, "text": c.text} for c in d.chunks]
@@ -70,6 +73,9 @@ def dataset_out(d: Dataset) -> dict:
         "source": d.source, "format": d.format, "license": d.license, "size_label": d.size_label,
         "record_count": d.record_count, "year": d.year, "keywords": d.keywords, "is_demo": d.is_demo,
         "views": d.views, "updated_at": iso(d.updated_at), "url": f"/datasets/{d.slug}",
+        "doi": d.doi or "", "creator": d.creator or "", "source_url": d.source_url or "",
+        "columns_schema": d.columns_schema or [], "quality_report": d.quality_report or {},
+        "has_coordinates": any(v.get("role") in {"latitude", "longitude"} for v in (d.columns_schema or [])),
     }
 
 
@@ -89,6 +95,9 @@ def media_out(m: Media) -> dict:
         "transcript": m.transcript or "", "transcript_source": m.transcript_source or "",
         "processing_status": m.processing_status or "ready", "processing_steps": m.processing_steps or [],
         "processing_error": m.processing_error or "", "uploaded_by": m.uploaded_by,
+        "alt_text": m.alt_text or "", "caption": m.caption or "", "source_url": m.source_url or "",
+        "captions_url": f"/api/media/{m.slug}/captions" if m.captions_path else None,
+        "visual_status": m.visual_status or "",
     }
 
 
@@ -134,6 +143,7 @@ def researcher_out(r: Researcher) -> dict:
     return {
         "type": "researcher", "id": r.id, "slug": r.slug, "name": r.name, "title": r.name, "position": r.title,
         "institution": r.institution, "expertise": r.expertise, "bio": r.bio, "is_demo": r.is_demo,
+        "orcid": r.orcid or None,
         "url": f"/researchers/{r.slug}",
     }
 

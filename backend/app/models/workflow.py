@@ -85,6 +85,7 @@ class IngestionJob(Base):
     error: Mapped[str] = mapped_column(Text, default="")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ocr_status: Mapped[str] = mapped_column(String(24), default="", server_default="")
 
 
 class Notification(Base):

@@ -9,10 +9,45 @@ from sqlalchemy.orm import Session
 from app.models import User
 from app.search.hybrid import retrieve
 from app.services import provenance as prov
+from app.services import visual
 from app.services.catalog import Catalog, Filters, apply_filters, build_catalog
 from app.utils.text import content_terms, normalize, snippet_around, stem
 
 SORTS = {"relevance", "newest", "oldest", "views", "alphabetical"}
+RRF_K = 60
+VISUAL_WEIGHT = 1.0       # a visual rank counts like one more ranked list in Reciprocal Rank Fusion
+AUTHORITY_BOOST = 1.12    # verified / partner / public-source records get a modest multiplier; demo data never does
+
+
+def _reasons(card: dict, a: dict, matched: list[str], concepts: list[str], title_hits: int, filters: Filters,
+             cat: Catalog) -> list[str]:
+    """Plain-language 'why this result matched' — every reason corresponds to a signal actually used."""
+    out = []
+    if a["kw"] and matched:
+        out.append("Keyword match: " + ", ".join(matched[:5]))
+    if title_hits:
+        out.append("Title match")
+    if a["vec"] > 0:
+        out.append(f"Semantic similarity ({a['vec']:.2f})")
+    if a["visual"]:
+        v = a["visual"]
+        out.append(f"Visual similarity ({v['similarity']:.2f})" + (f" · relevant frame {v['timestamp']}" if v.get("timestamp") else ""))
+    if concepts:
+        out.append("Topic match: " + ", ".join(concepts[:3]))
+    for label, rtype, slug in (("Station", "station", filters.station), ("Expedition", "expedition", filters.expedition),
+                               ("Researcher", "researcher", filters.researcher)):
+        if slug and (key := cat.by_slug.get((rtype, slug))) and (c := cat.card(*key)):
+            out.append(f"{label} match: {c['title']}")
+    v = card.get("verification")
+    if card.get("official"):
+        out.append("Official source (verified)")
+    elif v == "verified":
+        out.append("Verified source")
+    elif v == "public_source":
+        out.append("Public source")
+    elif v in prov.DEMO_STATUSES:
+        out.append("Demonstration record — no authority boost")
+    return out
 
 
 GROUP_ORDER = ["Documents", "Datasets", "Images", "Videos", "Expeditions", "Stations", "Researchers",
@@ -71,7 +106,7 @@ def search_resources(db: Session, user: User | None, q: str, mode: str, filters:
         notice, mode_used = r.notice, r.mode_used
         qterms = content_terms(q)
         qstems = {stem(t) for t in qterms}
-        agg: dict[tuple[str, int], dict] = defaultdict(lambda: {"score": 0.0, "hits": [], "vec": 0.0, "kw": False})
+        agg: dict[tuple[str, int], dict] = defaultdict(lambda: {"score": 0.0, "hits": [], "vec": 0.0, "kw": False, "visual": None})
         for h in r.hits:
             key = (h.chunk.resource_type, h.chunk.resource_id)
             a = agg[key]
@@ -79,29 +114,52 @@ def search_resources(db: Session, user: User | None, q: str, mode: str, filters:
             a["hits"].append(h)
             a["vec"] = max(a["vec"], h.vector_sim)
             a["kw"] = a["kw"] or h.keyword_rank is not None
+        # Visual relevance: CLIP text→image similarity over photographs and video key frames (when available)
+        if mode in {"semantic", "hybrid"} and (not restrict_types or "media" in restrict_types):
+            try:
+                vis_hits = visual.search(db, q, k=40)
+            except Exception:  # optional subsystem — never break search
+                vis_hits = []
+            for rank, v in enumerate(vis_hits):
+                a = agg[("media", v["media_id"])]
+                a["visual"] = v
+                a["score"] += VISUAL_WEIGHT / (RRF_K + rank + 1)
         top_vec = max((a["vec"] for a in agg.values()), default=0.0)
         allowed = {(c["type"], c["id"]) for c in pool}
         for key, a in agg.items():
             if key not in allowed:
                 continue
-            if not a["kw"] and a["vec"] < max(0.12, 0.55 * top_vec):
+            if not a["kw"] and not a["visual"] and a["vec"] < max(0.12, 0.55 * top_vec):
                 continue  # weak purely-semantic neighbours are noise
             card = cat.cards[key]
             title_terms = {stem(t) for t in content_terms(card["title"])}
-            title_boost = 0.012 * len(qstems & title_terms)
-            best = max(a["hits"], key=lambda h: h.score)
+            title_hits = len(qstems & title_terms)
+            title_boost = 0.012 * title_hits
+            best = max(a["hits"], key=lambda h: h.score) if a["hits"] else None
             matched = sorted({t for h in a["hits"] for t in h.matched_terms})
             concepts = [t for t in card["topics"] if {stem(x) for x in content_terms(t)} & qstems]
-            match_type = ("keyword + semantic" if a["kw"] and a["vec"] > 0 else "keyword" if a["kw"] else "semantic")
-            scored.append({
+            kinds = [k for k, on in (("keyword", a["kw"]), ("semantic", a["vec"] > 0), ("visual", bool(a["visual"]))) if on]
+            match_type = " + ".join(kinds)
+            authority = AUTHORITY_BOOST if card.get("verification") in prov.AUTHORITATIVE_STATUSES else 1.0
+            base = a["score"] + title_boost
+            item = {
                 **card,
-                "score": round(a["score"] + title_boost, 5),
+                "score": round(base * authority, 5),
                 "matched_terms": matched,
                 "matching_concepts": concepts,
                 "match_type": match_type,
-                "highlight": snippet_around(best.chunk.text, [normalize(t) for t in (matched or qterms)]),
-                "matched_section": best.chunk.section,
-            })
+                "highlight": snippet_around(best.chunk.text, [normalize(t) for t in (matched or qterms)]) if best else card["summary"],
+                "matched_section": best.chunk.section if best else "Visual match",
+                "match_reasons": _reasons(card, a, matched, concepts, title_hits, filters, cat),
+                "score_breakdown": {"text": round(a["score"] - (VISUAL_WEIGHT / RRF_K if a["visual"] else 0), 5),
+                                    "title": round(title_boost, 4), "authority_multiplier": authority},
+            }
+            if a["visual"]:
+                v = a["visual"]
+                item["visual_match"] = {"similarity": v["similarity"], "timestamp": v["timestamp"],
+                                        "frame_seconds": v["frame_seconds"],
+                                        "frame_url": f"/api/media/{card['slug']}/frames/{v['frame_index']}" if v["frame_index"] is not None else None}
+            scored.append(item)
         if scored:
             mx = max(s["score"] for s in scored)
             for s in scored:

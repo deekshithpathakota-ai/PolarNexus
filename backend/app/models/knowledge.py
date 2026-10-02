@@ -52,6 +52,15 @@ class Document(TimestampMixin, Base):
     is_demo: Mapped[bool] = mapped_column(Boolean, default=True)
     views: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # ---- v3 scientific metadata / ingestion fields (nullable or defaulted; existing rows stay valid)
+    doi: Mapped[str] = mapped_column(String(160), default="", server_default="")
+    license: Mapped[str] = mapped_column(String(160), default="", server_default="")
+    publisher: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    source_url: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    content_hash: Mapped[str] = mapped_column(String(64), default="", server_default="", index=True)
+    ocr_status: Mapped[str] = mapped_column(String(24), default="", server_default="")  # ""|not_needed|applied|partial|unavailable|failed
+    ocr_pages: Mapped[list] = mapped_column(JSON, default=list, nullable=True)
+    metadata_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     chunks: Mapped[list["DocumentChunk"]] = relationship(
         back_populates="document", cascade="all, delete-orphan", order_by="DocumentChunk.chunk_index"
@@ -117,6 +126,15 @@ class Dataset(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(24), default="indexed")
     is_demo: Mapped[bool] = mapped_column(Boolean, default=True)
     views: Mapped[int] = mapped_column(Integer, default=0)
+    # ---- v3 ingestion + FAIR metadata (nullable or defaulted)
+    doi: Mapped[str] = mapped_column(String(160), default="", server_default="")
+    creator: Mapped[str] = mapped_column(String(255), default="", server_default="")
+    source_url: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    content_hash: Mapped[str] = mapped_column(String(64), default="", server_default="", index=True)
+    file_path: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    columns_schema: Mapped[list] = mapped_column(JSON, default=list, nullable=True)
+    quality_report: Mapped[dict] = mapped_column(JSON, default=dict, nullable=True)
+    uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     records: Mapped[list["DatasetRecord"]] = relationship(
         back_populates="dataset", cascade="all, delete-orphan", order_by="DatasetRecord.id"
@@ -176,6 +194,13 @@ class Media(TimestampMixin, Base):
     processing_steps: Mapped[list] = mapped_column(JSON, default=list, nullable=True)
     processing_error: Mapped[str] = mapped_column(Text, default="", server_default="")
     uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # ---- v3 accessibility / provenance fields
+    alt_text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    caption: Mapped[str] = mapped_column(Text, default="", server_default="")
+    captions_path: Mapped[str] = mapped_column(String(500), default="", server_default="")  # WebVTT track if supplied
+    content_hash: Mapped[str] = mapped_column(String(64), default="", server_default="", index=True)
+    source_url: Mapped[str] = mapped_column(String(500), default="", server_default="")
+    visual_status: Mapped[str] = mapped_column(String(24), default="", server_default="")  # ""|indexed|skipped|failed
 
 
 class InstitutionalActivity(TimestampMixin, Base):
@@ -292,6 +317,7 @@ class Researcher(TimestampMixin, Base):
     expertise: Mapped[list] = mapped_column(JSON, default=list)
     bio: Mapped[str] = mapped_column(Text, default="")
     is_demo: Mapped[bool] = mapped_column(Boolean, default=True)
+    orcid: Mapped[str] = mapped_column(String(32), default="", server_default="")  # only ever a real, supplied iD
 
 
 class Topic(Base):
