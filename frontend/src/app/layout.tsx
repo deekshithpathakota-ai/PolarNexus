@@ -11,6 +11,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { ToastProvider } from "@/components/common/Toast";
 import { AuthProvider } from "@/lib/auth";
 import { LanguageProvider } from "@/lib/i18n";
+import { Analytics } from '@vercel/analytics/next';
 
 const brand = process.env.NEXT_PUBLIC_BRAND_NAME || "PolarNexus";
 
@@ -38,6 +39,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </ToastProvider>
           </AuthProvider>
         </LanguageProvider>
+        <Analytics />
       </body>
     </html>
   );
